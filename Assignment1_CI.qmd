@@ -9,51 +9,51 @@ editor: visual
 
 Progress:
 
--   well-defined problem
-
--   functional preliminary NN architecture to work from
+-   well-defined problem and functional preliminary NN architecture to work from
 
 Challenges:
 
--   Forecasting requires acquisition and integration of NOAA GEFS forecasts, since many of the important features in the preliminary models are weather-related.
+-   Is there a way to constrain error due to water balance (or inbalance)? At least initially, I'll have to assume persistence for some inputs (inflow, outflow, etc)... or do we sacrifice precision and remove those from the operational forecast model? These don't show up as strong parameters in the preliminary model for 1m, but dropping them will definitely reduce fidelity of the model for the integrated depth value, since both the North Fork inflow and the Chipmunk interflow are in the top 20 feature values from the SHAP analysis.
 
--   How to represent spread in model? Use MAE and assume Gaussian distribution as a seed?
+-   Forecasting requires acquisition and integration of NOAA GEFS forecasts, since many of the important features in the preliminary models are weather-related. This is mostly a coding lift more than anything.
 
 ## Scientific Motivation and Problem Statement
 
-Water temperature is often an indicator of water quality, as it governs much of the biological activity in freshwater systems. While temperature is an important parameter to monitor in freshwater lakes, manual monitoring of waterbodies (by physically visiting a site) and sensor network deployment to monitor water temperature, are costly endeavors. Northern Water, the municipal subdistrict that delivers drinking water to approximately 1 million people in northern Colorado and irrigation water for \~600,000 acres of land, has had recurring issues with water clarity in Grand Lake, the deepest natural lake in Colorado. They believe that the clarity issues in Grand Lake are primarily due to algal and diatom growth in Shadow Mountain reservoir which are pushed into Grand when they initiate pumping operations. The regulatory period for clarity in Grand Lake is July 1 - September 11.
+Water temperature is often an indicator of water quality, as it governs much of the biological activity in freshwater systems. While temperature is an important parameter to monitor in freshwater lakes, manual monitoring of waterbodies (by physically visiting a site) and sensor network deployment to monitor water temperature are costly endeavors. Northern Water, the municipal subdistrict that delivers drinking water to approximately 1 million people in northern Colorado and irrigation water for \~600,000 acres of land, has had recurring issues with water clarity in Grand Lake, the deepest natural lake in Colorado. They believe that the clarity issues in Grand Lake are primarily due to algal and diatom growth in Shadow Mountain reservoir which are pushed into Grand when they initiate pumping operations. Clarity in Grand is regulated by Senate Document 80 which dates back to 1937 and the inception of the Colorado Big-Thompson project, however in 2016 stakeholders and operators adopted a system of "goal qualifiers" for Grand. The goal qualifiers are defined through Secchi disc depth measurements (a measure of water clarity), requiring a 3.8-meter Secchi depth average and 2.5-meter Secchi depth daily minimum to be met throughout the July 1 to September 11 regulatory season.  
 
 Water in the Three Lakes System naturally flows from Grand into Shadow Mountain into Granby, but pumping operations reverse that by pumping cold water from Granby reservoir into Shadow Mountain and then into Grand and into the tunnel to serve the Front Range (@fig-cartoon). Northern suspects there is a biological "sweet spot" for water temperature in Shadow Mountain Reservoir that may reduce algal and diatom growth and therefore mitigate clarity impacts during pumping operations.
 
-Turns out the optimal temperature for reducing algal growth is to keep the upper 1m of water less than 15°C and to reduce diatom growth is to keep the average temperature of 0-5m ("integrated depth") greater than 14°C, which is a bit of a "Goldilocks" problem. A preliminary auto-regressive neural network model predicted tomorrow's water temperature reliably and better than or similar to a persistence model for the regulatory season during 2022 (@fig-res1m22, @fig-resint22). Using SHAP analysis (a method of explainable AI for neural networks) we found that operational pumping has an impact on tomorrow's temperature (@fig-shap1m22, @fig-shapint22), though the impact of operations on the integrated depth is stronger than the upper 1m.
+The optimal temperature for reducing algal growth is to keep the upper 1m of water less than 15°C and to reduce diatom growth is to keep the average temperature of 0-5m ("integrated depth") greater than 14°C, which is a bit of a "Goldilocks" problem. A preliminary auto-regressive neural network model predicted tomorrow's water temperature reliably and better than or similar to a persistence model for the regulatory season during 2022 (@fig-res1m22, @fig-resint22). Using SHAP analysis (a method of explainable AI for neural networks) we found that operational pumping has an impact on tomorrow's temperature (@fig-shap1m22, @fig-shapint22), though the impact of operations on the integrated depth is stronger than the upper 1m. This leads me to believe that the operations could be used as a "knob" to control water temperature to some extent in the Three Lakes System.
 
-The overarching goal is to create a decision support system that forecasts water temperature in Shadow Mountain Reservoir on a daily timestep to a horizon of seven days, since the operations of the pump over the previous seven days are the most influential operations variable from this preliminary model. Initially, this application will assume a constant operational pumping regime (where the previous day's pumping is continued throughout the forecast horizon), but the intention is to eventually add a 'knob' that would alter pumping operations as a mechanism to mitigate water temperature and attempt to reach the "Goldilocks" zone during the regulatory period. Adding that knob is likely out of scope for this class.
+The overarching goal is to create a decision support system that forecasts water temperature in Shadow Mountain Reservoir on a daily timestep to a horizon of seven days, since the operations of the pump over the previous seven days are the most influential operations variable from the preliminary model. Initially, this application will assume a constant operational pumping regime (where the previous day's pumping is continued throughout the forecast horizon), but the intention is to eventually add an operational "knob" that would alter pumping operations as a mechanism to mitigate water temperature within the forecast application and attempt to reach the "Goldilocks" range during the regulatory period. Adding that knob is likely out of scope for this class, so instead, I will focus on reliable 7-day forecasts using an auto-regressive neural network.
 
 ## Description of the Data
 
--   buoy data
+-   buoy data - there are two instrumented buoys that measure temperature in Shadow Mountain Reservoir. One is located near the interflow between Shadow Mountain and Grand Lake (deployed 2014) and the other is near the dam, at the opposite end of the reservoir (deployed 2012). The preliminary auto-regressive neural network only used data from the buoy closest to the interflow. Buoy data were aggregated to a daily average at \<=1m depth and from 0-5m. We used previous day, 2 days previous, 7 days previous maximum and mean temperature per depth summary as inputs into the neural network.
 
--   met data
+-   met data - temperature, solar radiation, and wind data originate from a meteorological station near Shadow Mountain. Precipitation data originate from a NCEI stations - one near Granby Reservoir, the other near Grand Lake. Solar radiation and wind data are gapfilled with NLDAS modeled data as needed. Data were prioritized by those available from the met station at Shadow Mountain, the NCEI data from Grand, the NCEI data from Granby, then the NLDAS data. Met data were summarized as previous 1, 3, 5, 10 days.
 
--   inflow/outflow data
+-   pumping operations - pumping operations data were summarized to total volume per day, then were summarized as the maximum, mean, and total volume of the previous 1, 2, and 7 days.
 
--   pumping operations
+-   inflow/outflow data - flow data from the North Fork of the Colorado that flows into Shadow Mountain ("nf"), the interflow between Grand and Shadow Mountain ("chip), and outflow from Shadow Mountain into Granby were summarized over the previous 1, 2, and 7 days.
 
 ## Description of pre-processing
 
-\- description of any data pre-processing performed and why you did it
+Highly left-skewed data were transformed by squaring the value, right-skewed data were transformed by taking the log of the value. We first added 0.1 to any value that contained zeros and required log transformation to avoid NaNs. Data were then standardized around zero using the mean and standard deviation of each parameter for best ingestion into a neural network architecture.
+
+The data summaries described above resulted in a massive amount of data as input into the model. After transforming and standardizing the data, I then eliminated redundant variables. To do this, I removed variables which were correlated with another by more than 90%, retaining the one that seemed more 'sensical' as a practitioner. This reduced the number of input features from 68 to 52.
 
 ## Data split
 
-Must account for timeseries, so split by regulatory year. When developing preliminary model, I intentionally held out 2023, assuming I'd use it for forecasting. There are discrete gaps in data over the winter, so I can assert some independence between each of the years of data.
+The data here are timeseries data that begin around May or June and end in October of each year. There are discrete gaps in data over the winter, so I can assert some independence between each of the years of data (and we won't talk about 'memory' in lakes, which is probably more important for biogeochemical/biological variables like phosphorus and chlorophyll than temperature).
 
--   training/validation will be leave one year out for years 2014-2022, creating an ensemble prediction
+-   training/validation will be leave one year out for years 2014-2022, creating an ensemble prediction of 9 models trained on all but one year of data, validated on that hold out data
 
 -   testing: 2023
 
 ## Description of the forecast approach
 
-\- detailed description of the data-driven forecast approach (e.g. the method)
+I think I'm going to use a NN approach similar to preliminary model described here. I'll likely repeat that NN for forecasted weather and persistence inflow data using the forecasted next day temperature for 7 days forward. While it may constrain error less to use a model that forecasts all 7 days for each depth, I don't believe I have sufficient data to train that kind of model (but probably worth a try?!) I'll likely give direct forecasting a go with the data for 2022 (since this wouldn't require any steady-state assumptions of inflow/interflow/outflow) and see how that goes before leaning into an iterative/rollout approach.
 
 ![Cartoon schematic of water flow in the Three Lakes System](images/TLS_diagram.png){#fig-cartoon fig-align="center" width="400"}
 
