@@ -7,6 +7,8 @@ editor: visual
 #jupyter: python3
 ---
 
+[GitHub link](https://github.com/steeleb/ATS-Data-Driven-Forecasting)
+
 Progress:
 
 -   well-defined problem and functional preliminary NN architecture to work from
@@ -32,6 +34,8 @@ The overarching goal is to create a decision support system that forecasts water
 -   buoy data - there are two instrumented buoys that measure temperature in Shadow Mountain Reservoir. One is located near the interflow between Shadow Mountain and Grand Lake (deployed 2014) and the other is near the dam, at the opposite end of the reservoir (deployed 2012). The preliminary auto-regressive neural network only used data from the buoy closest to the interflow. Buoy data were aggregated to a daily average at \<=1m depth and from 0-5m. We used previous day, 2 days previous, 7 days previous maximum and mean temperature per depth summary as inputs into the neural network.
 
 -   met data - temperature, solar radiation, and wind data originate from a meteorological station near Shadow Mountain. Precipitation data originate from a NCEI stations - one near Granby Reservoir, the other near Grand Lake. Solar radiation and wind data are gapfilled with NLDAS modeled data as needed. Data were prioritized by those available from the met station at Shadow Mountain, the NCEI data from Grand, the NCEI data from Granby, then the NLDAS data. Met data were summarized as previous 1, 3, 5, 10 days.
+
+-   NOAA GEFS - Need this one.
 
 -   pumping operations - pumping operations data were summarized to total volume per day, then were summarized as the maximum, mean, and total volume of the previous 1, 2, and 7 days.
 
