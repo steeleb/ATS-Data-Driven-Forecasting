@@ -1,0 +1,241 @@
+---
+title: "Feature Reduction (version 2)"
+author: "ROSSyndicate"
+date: "2024-05-23"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(GGally)
+
+upstream_version = '2024-05-21'
+reduced_version = '2024-06-03'
+```
+
+# Purpose
+
+After trying the aggressive feature reduction, I'll try something in between. The
+arNN of the first pass of reduced features performed more poorly than yesterday-is-today,
+and it might be because we've dropped parameters that are important (even if not
+as important as those listed in the SHAP). Also, I noticed a few redundant features
+that we should eliminate from the dataset.
+
+## Feature Reduction
+
+We'll keep the inflow data this time, but reduce the redundant features in the
+same way.
+
+```{r}
+t2023 <- read_csv('data/NN_train_val_test/SMR_autoNN_daily/trainval_t2023_v2024-05-09.csv')
+
+t2023_reduce <- t2023
+```
+
+Let's look at some correlation plots to determine if we should toss any
+redundant features, first by data group, since that's likely where we'll see
+some redundancy.
+
+### Yesterday's water temperature
+
+```{r}
+col_names = names(t2023_reduce)
+
+yesterday <- t2023_reduce %>% 
+  select(date, all_of(col_names[grepl("y_", col_names)])) 
+
+ggpairs(yesterday, columns = 2:ncol(yesterday))
+```
+
+Max 1 and max 0-5 are the same (which makes sense)
+
+```{r}
+yesterday_reduced <- yesterday %>% 
+  select(-y_max_1m_temp_degC)
+
+ggpairs(yesterday_reduced, columns = 2:ncol(yesterday_reduced))
+```
+
+We could probably reduce this further, so let's do that by dropping all the 1m
+summaries
+
+```{r}
+yesterday_reduced <- yesterday_reduced %>% 
+  select(-c(y_min_1m_temp_degC, y_mean_1m_temp_degC))
+
+ggpairs(yesterday_reduced, columns = 2:ncol(yesterday_reduced))
+```
+
+### Air Temperature
+
+```{r}
+temp <- t2023_reduce %>% 
+  select(date, all_of(col_names[grepl('temp', col_names)])) %>% 
+  select(-all_of(col_names[grepl('1m|5m', col_names)])) 
+
+ggpairs(temp, columns = 2:ncol(temp))
+```
+
+These are all \< 0.9 correlation, so let's leave it for now.
+
+### Solar Radiation
+
+```{r}
+solrad <- t2023_reduce %>% 
+  select(date, all_of(col_names[grepl('sol', col_names)]))
+
+ggpairs(solrad, columns = 2:ncol(solrad))
+```
+
+These look good too.
+
+### Pump
+
+```{r}
+pump <- t2023_reduce %>% 
+  select(date, all_of(col_names[grepl('pump', col_names)]))
+
+ggpairs(pump, columns = 2:ncol(pump))
+```
+
+Oh, right - there is a linear relationship between the average and the sum over
+a designated time period. We can toss the mean in favor of the sum.
+
+```{r}
+pump_reduced <- pump %>% 
+  select(-c(mean_pump_q_p2, mean_pump_q_p7))
+
+ggpairs(pump_reduced, columns = 2:ncol(pump_reduced))
+```
+
+### Wind Speed
+
+```{r}
+wind <- t2023_reduce %>% 
+  select(date, all_of(col_names[grepl('wind', col_names)]))
+
+ggpairs(wind, columns = 2:ncol(wind))
+```
+
+Min wind 3/5, Max wind 3/5, Min 10/5 - we can drop max/min 5 and solve these
+redundancies.
+
+```{r}
+wind_reduced <- wind %>% 
+  select(-c(max_wind_mps_5, min_wind_mps_5))
+
+ggpairs(wind_reduced, columns = 2:ncol(wind_reduced))
+```
+
+### Precip
+
+```{r}
+precip <- t2023_reduce %>% 
+  select(date, all_of(col_names[grepl('precip', col_names)]))
+
+ggpairs(precip, columns = 2:ncol(precip))
+```
+
+Looks good. So dry.
+
+### North Fork
+
+```{r}
+NF <- t2023_reduce %>% 
+  select(date, all_of(col_names[grepl('NF', col_names)]))
+
+ggpairs(NF, columns = 2:ncol(NF))
+```
+
+Similar issue here where there are sum and averages that are 1:1, also dropping 
+the other p2 parameters since they seem to have high correlation with minus 1 
+and minus 2 day values.
+
+```{r}
+NF_reduced <- NF %>% 
+  select(-c(sum_NF_q_p2, sum_NF_q_p7, max_NF_q_p2, mean_NF_q_p2))
+
+ggpairs(NF_reduced, columns = 2:ncol(NF_reduced))
+
+```
+
+### Chipmunk Lane
+
+```{r}
+chip <- t2023_reduce %>% 
+  select(date, all_of(col_names[grepl('chip', col_names)]))
+
+ggpairs(chip, columns = 2:ncol(chip))
+```
+
+Remove the sum/average dupes
+
+```{r}
+chip_reduced <- chip %>% 
+  select(-c(sum_chip_q_p2, sum_chip_q_p7, max_chip_q_p2, mean_chip_q_p2))
+
+ggpairs(chip_reduced, columns = 2:ncol(chip_reduced))
+```
+
+
+## Collate and export by year
+
+```{r}
+# collate data
+t2023_reduced <- reduce(list(yesterday_reduced, pump_reduced, temp, wind_reduced, solrad, precip, NF_reduced, chip_reduced),
+                        full_join)
+
+reduce_names = names(t2023_reduced)
+
+# add back in the labels
+reduce_names = append(reduce_names, c("mean_1m_temp_degC", "mean_0_5m_temp_degC"))
+
+years = seq(2014, 2022)
+
+og = 'data/NN_train_val_test/SMR_autoNN_daily'
+fp = 'data/NN_train_val_test/SMR_autoNN_reduce_2'
+map(.x = years,
+    .f = ~ {
+      validation <- read_csv(file.path(og,
+                                       paste0('validation_t2023_',
+                                              .x,
+                                              '_v',
+                                              upstream_version, 
+                                              '.csv'))) %>% 
+        select(all_of(reduce_names))
+      write_csv(validation, 
+                file.path(fp, 
+                          paste0("validation_t2023_",
+                                 .x,
+                                 "_reduced_v",
+                                 reduced_version,
+                                 ".csv")))
+      training <- read_csv(file.path(og,
+                                       paste0('training_t2023_',
+                                              .x,
+                                              '_v', 
+                                              upstream_version,
+                                              '.csv'))) %>% 
+        select(all_of(reduce_names))
+      write_csv(training, 
+                file.path(fp, 
+                          paste0("training_t2023_",
+                                 .x,
+                                 "_reduced_v",
+                                 reduced_version,
+                                 ".csv")))
+    })
+```
+
+And also subset the test set
+
+```{r}
+test <- read_csv(file.path(og, paste0('t2023_standardized_v',
+                                      upstream_version, 
+                                      '.csv')))
+
+test_reduced <- test %>% 
+  select(reduce_names)
+
+write_csv(test_reduced, file.path(fp, paste0('t2023_reduced_standardized_v', reduced_version, '.csv')))
+```

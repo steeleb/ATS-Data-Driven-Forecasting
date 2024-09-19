@@ -1,0 +1,560 @@
+
+# Purpose
+
+This script pre-processes the training and validation data for modeling water 
+temperature in Shadow Mountain Reservoir and saves column means/standard deviations
+used to pre-process so we can apply to testing data, too.
+
+# Setup environment
+
+```{r}
+source('pySetup.R')
+```
+
+
+```{python}
+# import modules
+import os
+import sys
+import pandas as pd
+import numpy as np
+from plotnine import ggplot, geom_point, geom_histogram, aes, facet_grid, theme_bw, labs
+from datetime import date
+import datetime as dt
+import pickle
+
+# store a date for versioning
+standardize_version = '2024-05-21'
+```
+
+# Load files!
+
+```{python}
+file_path = os.path.expanduser("/Users/steeleb/OneDrive - Colostate/NASA-Northern/data/NN_train_val_test/SMR_autoNN_daily/")
+
+# list the files and get the set that use the test as 2022:
+files = pd.Series(os.listdir(file_path))
+files = files[files.str.contains('t2022')]
+# we just care about the train/val set right now
+tv = files[files.str.contains('trainval')]
+idx = tv.index
+
+# import training data
+tv_fn = os.path.join(file_path, tv[idx[0]])
+with open(tv_fn) as f:
+    tv = pd.read_csv(f, sep=',')
+
+```
+
+# Transform as needed
+
+We should look at the histograms for these variables to know if we need to 
+transform before standardizing.
+
+### Water Temperature:
+
+```{python}
+h20_1m_temp = (pd.DataFrame(tv.filter(like='1m').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+(ggplot(h20_1m_temp, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Water Temperature (average 1m)")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+
+h20_05m_temp = (pd.DataFrame(tv.filter(like='0_5m').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+(ggplot(h20_05m_temp, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Water Temperature (average 0-5m)")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+
+```
+
+These are nearly bi-modal, but we'll leave as is.
+
+### Air Temperature:
+
+```{python}
+min_temp = (pd.DataFrame(tv.filter(like='min_temp').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+min_temp['variable'] = min_temp['variable'].astype('category').cat.reorder_categories(['min_temp_degC_1', 'min_temp_degC_3', 'min_temp_degC_5', 'min_temp_degC_10'])
+mean_temp = (pd.DataFrame(tv.filter(like='mean_temp').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'})
+              .sort_values('variable'))
+mean_temp['variable'] = mean_temp['variable'].astype('category').cat.reorder_categories(['mean_temp_degC_1', 'mean_temp_degC_3', 'mean_temp_degC_5', 'mean_temp_degC_10'])
+max_temp = (pd.DataFrame(tv.filter(like='max_temp').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'})
+              .sort_values('variable'))
+max_temp['variable'] = max_temp['variable'].astype('category').cat.reorder_categories(['max_temp_degC_1', 'max_temp_degC_3', 'max_temp_degC_5', 'max_temp_degC_10'])
+
+(ggplot(min_temp, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Minimum Air Temperature")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+(ggplot(mean_temp, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Mean Air Temperature")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+(ggplot(max_temp, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Maximum Air Temperature")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+```
+
+These are a little skewed (mean air temp in particulary), but not enough to warrant transformation.
+
+### Wind
+
+```{python}
+min_wind = (pd.DataFrame(tv.filter(like='min_wind').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+min_wind['variable'] = min_wind['variable'].astype('category').cat.reorder_categories(['min_wind_mps_1', 'min_wind_mps_3', 'min_wind_mps_5', 'min_wind_mps_10'])
+mean_wind = (pd.DataFrame(tv.filter(like='mean_wind').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+mean_wind['variable'] = mean_wind['variable'].astype('category').cat.reorder_categories(['mean_wind_mps_1', 'mean_wind_mps_3', 'mean_wind_mps_5', 'mean_wind_mps_10'])
+max_wind = (pd.DataFrame(tv.filter(like='max_wind').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+max_wind['variable'] = max_wind['variable'].astype('category').cat.reorder_categories(['max_wind_mps_1', 'max_wind_mps_3', 'max_wind_mps_5', 'max_wind_mps_10'])
+
+(ggplot(min_wind, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Minimum Wind Speed (mps)")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+(ggplot(mean_wind, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Mean Wind Speed (mps)")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+(ggplot(max_wind, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Maximum Wind Speed (mps)")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+```
+
+It looks like maximum wind variables need to be transformed here.
+
+```{python}
+tv_no_max_wind = tv.drop(tv.filter(like = 'max_wind').columns, axis = 1)
+max_wind = tv.filter(like = 'max_wind')
+max_wind = np.square(max_wind)
+
+tv2 = pd.concat([tv_no_max_wind, max_wind], axis = 1)
+
+max_wind = (pd.DataFrame(tv2.filter(like='max_wind').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+max_wind['variable'] = max_wind['variable'].astype('category').cat.reorder_categories(['max_wind_mps_1', 'max_wind_mps_3', 'max_wind_mps_5', 'max_wind_mps_10'])
+
+(ggplot(max_wind, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Maximum Wind Speed (mps)")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+
+```
+
+That's a little better.
+
+### Solar Radiation
+
+```{python}
+tot_sol_rad = (pd.DataFrame(tv.filter(like='sol_rad').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+tot_sol_rad['variable'] = tot_sol_rad['variable'].astype('category').cat.reorder_categories(['tot_sol_rad_Wpm2_1', 'tot_sol_rad_Wpm2_3', 'tot_sol_rad_Wpm2_5', 'tot_sol_rad_Wpm2_10'])
+
+(ggplot(tot_sol_rad, aes(x = 'value')) 
+  + geom_histogram(bins = 50) 
+  + labs(title = "Total Solar Radiation")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+```
+
+These look fine!
+
+### Precipitation
+
+```{python}
+tot_precip = (pd.DataFrame(tv.filter(like='precip').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+tot_precip['variable'] = tot_precip['variable'].astype('category').cat.reorder_categories(['tot_precip_mm_1', 'tot_precip_mm_3', 'tot_precip_mm_5', 'tot_precip_mm_10'])
+
+(ggplot(tot_precip, aes(x = 'value')) 
+  + geom_histogram(bins = 50) 
+  + labs(title = "Total Precipitation (mm)")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+```
+
+Eep! These are super skewed. For these, we'll take the log of the value, but 
+first we need to add 0.1 since most of the values are 0 and log+0 don't play 
+nicely.
+
+```{python}
+tv_no_precip = tv2.drop(tv2.filter(like = 'precip').columns, axis = 1)
+tot_precip = tv.filter(like='precip')
+tot_precip += 0.1
+tot_precip = np.log(tot_precip)
+
+tv3 = pd.concat([tv_no_precip, tot_precip], axis = 1)
+
+tot_precip = (pd.DataFrame(tv3.filter(like='precip').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+tot_precip['variable'] = tot_precip['variable'].astype('category').cat.reorder_categories(['tot_precip_mm_1', 'tot_precip_mm_3', 'tot_precip_mm_5', 'tot_precip_mm_10'])
+
+(ggplot(tot_precip, aes(x = 'value')) 
+  + geom_histogram(bins = 50) 
+  + labs(title = "Total Precipitation (mm)")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+```
+
+That's better, though 0's are arguably problematic - we may want to change this
+to categorical later, 0 = no rain, 1 = some rain, 2 = a lot of rain - to help with 
+this issue. For now, we'll leave it as is.
+
+### Pump
+
+```{python}
+pump = tv.filter(like='pump')
+sum_pump = (pd.DataFrame(tv.filter(like='sum_pump').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+sum_pump['variable'] = sum_pump['variable'].astype('category').cat.reorder_categories(['sum_pump_q_p2', 'sum_pump_q_p7'])
+cols_to_keep = [col for col in pump.columns if '_m' in col or 'mean' in col]
+mean_pump = (pd.DataFrame(tv[cols_to_keep].stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+mean_pump['variable'] = mean_pump['variable'].astype('category').cat.reorder_categories(['pump_q_m1', 'pump_q_m2', 'mean_pump_q_p2', 'mean_pump_q_p7'])
+max_pump = (pd.DataFrame(tv.filter(like='max_pump').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+max_pump['variable'] = max_pump['variable'].astype('category').cat.reorder_categories(['max_pump_q_p2', 'max_pump_q_p7'])
+
+(ggplot(sum_pump, aes(x = 'value')) 
+  + geom_histogram(bins = 20) 
+  + labs(title = "Total Volume Pumped")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+(ggplot(mean_pump, aes(x = 'value')) 
+  + geom_histogram(bins = 20) 
+  + labs(title = "Mean Volume Pumped")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+(ggplot(max_pump, aes(x = 'value')) 
+  + geom_histogram(bins = 20) 
+  + labs(title = "Maximum Volume Pumped")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+```
+
+These look fine, even though volume of 0 is prevalent in the dataset. 
+
+### Chipmunk
+
+```{python}
+chip = tv.filter(like="chip")
+min_chip = (pd.DataFrame(tv.filter(like='min_chip').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+min_chip['variable'] = min_chip['variable'].astype('category').cat.reorder_categories(['min_chip_q_m1', 'min_chip_q_m2', 'min_chip_q_p7'])
+cols_to_keep = [col for col in chip.columns if 'ave' in col or 'mean' in col]
+mean_chip = (pd.DataFrame(tv[cols_to_keep].stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+mean_chip['variable'] = mean_chip['variable'].astype('category').cat.reorder_categories(['ave_chip_q_m1', 'ave_chip_q_m2', 'mean_chip_q_p2', 'mean_chip_q_p7'])
+max_chip = (pd.DataFrame(tv.filter(like='max_chip').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+max_chip['variable'] = max_chip['variable'].astype('category').cat.reorder_categories(['max_chip_q_m1', 'max_chip_q_m2', 'max_chip_q_p2', 'max_chip_q_p7'])
+sum_chip = (pd.DataFrame(tv.filter(like='sum_chip').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+sum_chip['variable'] = sum_chip['variable'].astype('category').cat.reorder_categories(['sum_chip_q_p2', 'sum_chip_q_p7'])
+
+(ggplot(min_chip, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Minimum Chipmunk Lane Flow (q)")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+(ggplot(mean_chip, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Mean Chipmunk Lane Flow (q)")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+(ggplot(max_chip, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Maximum Chipmunk Lane Flow (q)")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+(ggplot(sum_chip, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Total Chipmunk Lane Flow (q)")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+```
+
+Minimum flow is pretty skewed. Has a similar issue as precip, so we'll transform
+and see how things go in training! Since these values are negative, we need to take
+the absolute value of them and add 0.1 before transforming. While it's counter intuitive
+we will leave the values as-is, since we will still standardize them and ML doesn't
+care what the sign of the values are, just the magnitude.
+
+```{python}
+tv_no_minchip = tv3.drop(tv3.filter(like = 'min_chip').columns, axis = 1)
+min_chip = tv.filter(like='min_chip')
+min_chip = np.abs(min_chip)
+min_chip += 0.1
+min_chip = np.sqrt(min_chip)
+
+tv4 = pd.concat([tv_no_minchip, min_chip], axis = 1)
+
+min_chip = (pd.DataFrame(tv4.filter(like='min_chip').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+min_chip['variable'] = min_chip['variable'].astype('category').cat.reorder_categories(['min_chip_q_m1', 'min_chip_q_m2', 'min_chip_q_p7'])
+
+(ggplot(min_chip, aes(x = 'value')) 
+  + geom_histogram(bins = 50) 
+  + labs(title = "Minimum Chipmunk Lane")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+
+```
+
+A little wacky, but I guess less skewed?
+
+### North Fork
+
+```{python}
+nf = tv.filter(like='NF')
+cols_to_keep = [col for col in nf.columns if '_m' in col or 'mean' in col]
+mean_nf = (pd.DataFrame(tv[cols_to_keep].stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+mean_nf['variable'] = mean_nf['variable'].astype('category').cat.reorder_categories(['NF_q_m1', 'NF_q_m2', 'mean_NF_q_p2', 'mean_NF_q_p7'])
+max_nf = (pd.DataFrame(tv.filter(like='max_NF').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+max_nf['variable'] = max_nf['variable'].astype('category').cat.reorder_categories(['max_NF_q_p2', 'max_NF_q_p7'])
+sum_nf = (pd.DataFrame(tv.filter(like='sum_NF').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+sum_nf['variable'] = sum_nf['variable'].astype('category').cat.reorder_categories(['sum_NF_q_p2', 'sum_NF_q_p7'])
+
+(ggplot(mean_nf, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Mean North Fork Flow (q)")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+(ggplot(max_nf, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Maximum North Fork Flow (q)")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+(ggplot(sum_nf, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Total North Fork Flow (q)")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+
+```
+
+These definitely need to be transformed!
+
+```{python}
+tv_no_NF = tv4.drop(nf.columns, axis = 1)
+nf = np.log(nf)
+
+tv5 = pd.concat([tv_no_NF, nf], axis = 1)
+
+cols_to_keep = [col for col in nf.columns if '_m' in col or 'mean' in col]
+mean_nf = (pd.DataFrame(tv5[cols_to_keep].stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+mean_nf['variable'] = mean_nf['variable'].astype('category').cat.reorder_categories(['NF_q_m1', 'NF_q_m2', 'mean_NF_q_p2', 'mean_NF_q_p7'])
+max_nf = (pd.DataFrame(tv5.filter(like='max_NF').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+max_nf['variable'] = max_nf['variable'].astype('category').cat.reorder_categories(['max_NF_q_p2', 'max_NF_q_p7'])
+sum_nf = (pd.DataFrame(tv5.filter(like='sum_NF').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+sum_nf['variable'] = sum_nf['variable'].astype('category').cat.reorder_categories(['sum_NF_q_p2', 'sum_NF_q_p7'])
+
+(ggplot(mean_nf, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Mean North Fork Flow (q)")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+(ggplot(max_nf, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Maximum North Fork Flow (q)")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+(ggplot(sum_nf, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Total North Fork Flow (q)")
+  + facet_grid(rows = 'variable')
+  + theme_bw()
+  )
+
+```
+
+Much better.
+
+### Res level
+
+```{python}
+(ggplot(tv, aes(x='lake_reservoir_elev_ft'))
+  + geom_histogram() 
+  + labs(title = "Reservoir Elevation (ft))")
+  + theme_bw()
+  )
+```
+
+This is fine too.
+
+Let's do a quick sanity check to make sure we haven't created any additional columns or rows:
+
+```{python}
+tv.shape
+tv5.shape
+```
+
+Great!
+
+# Standardize the data
+
+To standardize the data around 0, we'll use the mean and standard deviation:
+
+```{python}
+def standardize_column(df, col_name):
+    col = df[col_name]
+    return (col - col.mean()) / col.std()
+```
+
+Before we apply, we want to make a copy of this dataframe and drop the dates 
+from it.
+
+```{python}
+tv_short = tv5.copy()
+tv_short = tv_short.drop('date', axis = 1)
+```
+
+And now apply the function:
+
+```{python}
+tv_standardized = tv_short.apply(lambda col: standardize_column(tv_short, col.name))
+```
+
+Because we want to be able to apply these same standardizations to the test data, 
+we should grab the mean/std values for each column:
+```{python}
+tv_mean_std = pd.DataFrame({'mean': tv_short.mean(), 'std': tv_short.std()})
+```
+
+Lets save this as a .csv file for later use
+```{python}
+file_name = "mean_std_train_val_t2022_v" + standardize_version + ".csv"
+# join with file path
+fp = os.path.join(file_path, file_name)
+# and save
+tv_mean_std.to_csv(fp, index=True)
+```
+
+# Split Training/Validation
+
+Our training data are now ready to be split into training and validation sets.
+
+```{python}
+training = tv_standardized.copy()
+
+# but let's add lake and date back in.
+training = training.join(tv5[['date']])
+```
+
+We'll do timeseries cross validation here.
+
+```{python}
+training['date'] = pd.to_datetime(training['date'])
+training['date'].min()  
+training['date'].max()  
+```
+
+Looks like it's 8 years of data, let's break this by year.
+
+```{python}
+start_year = pd.to_datetime('2014-01-01', utc = True)
+end_year = pd.to_datetime('2022-01-01', utc = True)
+
+years = pd.date_range(start_year, end_year, freq ='1YS', inclusive = 'left')
+
+def save_csv(data, data_name, filepath):
+  file_name = data_name + "_v" + standardize_version +".csv"
+  # join with file path
+  fp = os.path.join(filepath, file_name)
+  # and save
+  data.to_csv(fp, index=False)
+
+
+for y in years:
+  val = training.loc[training['date'].between(y, y + pd.tseries.offsets.DateOffset(years = 1))]
+  train = training.merge(val, how='outer', indicator=True).query('_merge=="left_only"').drop('_merge', axis=1)
+  if (val.shape[1] == train.shape[1]) & (val.shape[0] + train.shape[0] == training.shape[0]):
+    # subset for only reg duration
+    start_reg = pd.to_datetime((dt.datetime.strftime(y, '%Y') + '-07-01'), utc = True)
+    end_reg = pd.to_datetime((dt.datetime.strftime(y, '%Y') + '-09-11'), utc = True)
+    val['date'] = pd.to_datetime(val['date'])
+    val = val.loc[val['date'].between(start_reg, end_reg, inclusive = 'both')]
+    # save files
+    save_csv(val, 'validation_t2022_' + dt.datetime.strftime(y, '%Y'), file_path)
+    save_csv(train, 'training_t2022_' + dt.datetime.strftime(y, '%Y'), file_path)
+  else: 
+    print('There is an issue with the shape of your training and validation sets')
+
+```
+
+
