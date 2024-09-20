@@ -1,0 +1,129 @@
+---
+title: "Access NOAA GEFS Forecasts"
+author: "ROSSyndicate"
+date: "2024-09-19"
+output: html_document
+---
+
+# Purpose
+
+This script walks through acquisition of archived NOAA GEFS forecasts for the
+Three Lakes System. 
+
+``` {r}
+library(tidyverse)
+library(magick)
+library(aws.s3)
+library(tmap)
+```
+
+# Intro to AWS
+
+Check for the bucket
+
+```{r}
+bucket_exists(
+  bucket = "s3://noaa-gefs-pds/",
+  region = "us-east-1"
+  )
+```
+
+Look at the contents
+
+```{r}
+get_bucket_df(
+  bucket = "s3://noaa-gefs-pds/",
+  region = "us-east-1",
+  prefix = "gefs.20201001/00/atmos/pgrb2sp25/",
+  max = 100
+) %>% 
+  as_tibble()
+```
+
+Can we download something?
+
+0.25 resolution starts ~ Oct 2020
+https://www.nco.ncep.noaa.gov/pmb/products/gens/gep01.t00z.pgrb2s.0p25.f000.shtml
+
+```{r}
+# if object exists, save it and return file path
+save_object(
+  object = "gefs.20201001/00/atmos/pgrb2sp25/gep01.t00z.pgrb2s.0p25.f000",
+  bucket = "s3://noaa-gefs-pds/",
+  region = "us-east-1",
+  file = "test.grb2"
+)
+```
+
+Load it?
+
+```{r}
+test_gefs <- read_stars("test.grb2")
+```
+
+Plot it?
+
+```{r}
+smaller_gefs <- test_gefs %>% 
+  filter(x < -105) %>% 
+  filter(x > -106) %>% 
+  filter(y > 40) %>% 
+  filter(y < 41)
+
+plot(smaller_gefs)
+
+smr <- st_point(c(-105.85, 40.22)) %>% 
+  st_sfc(., crs = "EPSG:4326")
+
+tmap_mode("view")
+tm_shape(smr) +
+  tm_dots()
+
+smr_extr <- st_extract(smaller_gefs, st_transform(smr, crs = st_crs(smaller_gefs))) %>% 
+  st_as_sf() %>% 
+  st_drop_geometry()
+
+colnames(smr_extr) <- c("GUST", "PRES", "HGT", "TSOIL", "SOILW", "WEASD", "SNOD",
+                        "ICETK", "TMP", "DPT", "RH", "TMAX", "TMIN", "UGRD", "VGRD",
+                        "CAPE", "CIN", "PWAT", "HLCY", "CAPE2", "CIN2", "PRMSL")
+```
+
+The 0.25km has about everything we need except SW/LW Radiation. So let's also 
+grab those data from the 0.5 data (we'll grab the rest of the data from those
+too, just to compare to see how worth it is to grab 0.25deg and 0.5deg data)
+
+```{r}
+get_bucket_df(
+  bucket = "s3://noaa-gefs-pds/",
+  region = "us-east-1",
+  prefix = "gefs.20201001/00/atmos/pgrb2ap5/",
+  max = 100
+) %>% 
+  as_tibble()
+```
+
+```{r}
+# if object exists, save it and return file path - 1800 utc is ~ noon. 
+save_object(
+  object = "gefs.20201001/06/atmos/pgrb2ap5/gep01.t06z.pgrb2a.0p50.f018",
+  bucket = "s3://noaa-gefs-pds/",
+  region = "us-east-1",
+  file = "test.grb2"
+)
+
+test_gefs <- read_stars("test.grb2")
+
+smr_extr <- st_extract(test_gefs, st_transform(smr, crs = st_crs(test_gefs))) %>% 
+  st_as_sf() %>% 
+  st_drop_geometry() 
+
+names(smr_extr)[c(60:68, 78, 79)] <- c("WEASD", "SNOD", "ICETK", "TMP", "RH", "TMAX", "TMIN", "UGRD", "VGRD", "DSWRF", "DLWRF")
+
+fewer_extr <- smr_extr %>% select("WEASD", "SNOD", "ICETK", "TMP", "RH", "TMAX", "TMIN", "UGRD", "VGRD", "DSWRF", "DLWRF")
+
+```
+
+We want to access 7-day forecasts for noon every 24h at midnight local time (06 UTC).
+
+Function will change date. Folder will always be 06 (midnight local) and then iterate 12, 36, 60, 84, 108, 132, 156 grabbing data. Need to grab each control + perturbation.
+
