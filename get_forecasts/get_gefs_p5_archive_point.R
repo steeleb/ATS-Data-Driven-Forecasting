@@ -80,7 +80,7 @@ for (d in date_list_2022) {
                               all_iterations$loc_id),
                     .f = get_gefs_p5_archive_point) %>% 
     bind_rows()
-  write_feather(gefs_extr, paste0("data/forecasts/gefs_p5_", date, ".feather"))
+  write_feather(gefs_extr, paste0("data/forecasts/gefs_p5_", d, ".feather"))
 }
 
 # 2023 --------------------------------------------------------------------

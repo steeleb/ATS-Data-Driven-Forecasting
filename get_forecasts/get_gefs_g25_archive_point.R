@@ -4,38 +4,48 @@ library(aws.s3)
 library(feather)
 
 get_gefs_p25_archive_point <- function(date, model, horizon, lat, lon, loc_id) {
-  # get forecast
-  save_object(
-    object = paste0("gefs.", date, "/06/atmos/pgrb2sp25/", model, ".t06z.pgrb2a.0p25.f", horizon),
-    bucket = "s3://noaa-gefs-pds/",
-    region = "us-east-1",
-    file = "temp.grb2"
+  tryCatch(
+    {
+      # get forecast
+      save_object(
+        object = paste0("gefs.", date, "/06/atmos/pgrb2sp25/", model, ".t06z.pgrb2s.0p25.f", horizon),
+        bucket = "s3://noaa-gefs-pds/",
+        region = "us-east-1",
+        file = "temp.grb2"
+      )
+      
+      # load forecast
+      gefs <- read_stars("temp.grb2")
+      
+      # extract for location
+      loc_sf <- st_point(c(lon, lat)) %>% 
+        st_sfc(., crs = "EPSG:4326")
+      
+      loc_extr <- st_extract(gefs, st_transform(loc_sf, crs = st_crs(gefs))) %>% 
+        st_as_sf() %>% 
+        st_drop_geometry() 
+      
+      names(loc_extr)[c(1, 5, 8, 11:16, 19, 26, 27)] <- c("GUST", "WEASD", "TMP", "TMAX", "TMIN", 
+                                                          "UGRD", "VGRD", "APCP", "CSNOW", "CRAIN", 
+                                                          "DSWRF", "DLWRF")
+      
+      loc_extr %>% 
+        select("GUST", "WEASD", "TMP", "TMAX", "TMIN", 
+               "UGRD", "VGRD", "APCP", "CSNOW", "CRAIN", 
+               "DSWRF", "DLWRF") %>% 
+        mutate(loc = loc_id, 
+               date = date, 
+               model = model, 
+               horizon = horizon, 
+               gefs = "gefs_0p25")
+    },
+    error = function(e) {
+      message(paste0("Could not gather forecasts for model ", model, 
+                     " at timestep ", horizon,
+                     " on ", date))
+      return(NULL)
+    }
   )
-  
-  # load forecast
-  gefs <- read_stars("temp.grb2")
-  
-  # extract for location
-  loc_sf <- st_point(c(lon, lat)) %>% 
-    st_sfc(., crs = "EPSG:4326")
-  
-  loc_extr <- st_extract(gefs, st_transform(loc_sf, crs = st_crs(gefs))) %>% 
-    st_as_sf() %>% 
-    st_drop_geometry() 
-  
-  names(loc_extr)[c(1, 5, 8, 11:16, 19, 26, 27)] <- c("GUST", "WEASD", "TMP", "TMAX", "TMIN", 
-                                                      "UGRD", "VGRD", "APCP", "CSNOW", "CRAIN", 
-                                                      "DSWRF", "DLWRF")
-
-  loc_extr %>% 
-    select("GUST", "WEASD", "TMP", "TMAX", "TMIN", 
-           "UGRD", "VGRD", "APCP", "CSNOW", "CRAIN", 
-           "DSWRF", "DLWRF") %>% 
-    mutate(loc = loc_id, 
-           date = date, 
-           model = model, 
-           horizon = horizon, 
-           gefs = "gefs_0p25")
 }
 
 
@@ -55,46 +65,28 @@ lat <- 40.22
 loc_id <- "SMR"
 
 
-# 2021 --------------------------------------------------------------------
-
-date_list_2021 <- format(
-  seq.Date(ymd("2021-05-01"), ymd("2021-11-01"), by = "1 day"),
-  "%Y%m%d")
-
-all_data_2021 <- expand.grid(date_list_2021, models, horizons, lon, lat, loc_id) 
-colnames(all_data_2021) <- c("date", "model", "horizon", "lon", "lat", "loc_id")
-
-gefs_2021 <- pmap(.l = list(all_data_2021$date,
-                            all_data_2021$model,
-                            all_data_2021$horizon,
-                            all_data_2021$lon,
-                            all_data_2021$lat,
-                            all_data_2021$loc_id),
-                  .f = get_gefs_p25_archive_point) %>% 
-  bind_rows()
-
-write_feather(gefs_2021, "data/forecasts/gefs_p25_2021.feather")
-
-
-# 2022 --------------------------------------------------------------------
+# 2022 -------------------------------------------------------------------
 
 date_list_2022 <- format(
   seq.Date(ymd("2022-05-01"), ymd("2022-11-01"), by = "1 day"),
   "%Y%m%d")
 
-all_data_2022 <- expand.grid(date_list_2022, models, horizons, lon, lat, loc_id) 
-colnames(all_data_2022) <- c("date", "model", "horizon", "lon", "lat", "loc_id")
-
-gefs_2022 <- pmap(.l = list(all_data_2022$date,
-                            all_data_2022$model,
-                            all_data_2022$horizon,
-                            all_data_2022$lon,
-                            all_data_2022$lat,
-                            all_data_2022$loc_id),
-                  .f = get_gefs_p25_archive_point) %>% 
-  bind_rows()
-
-write_feather(gefs_2022, "data/forecasts/gefs_p25_2022.feather")
+for (d in date_list_2022) {
+  message(paste0("Retrieving forecasts for ", d))
+  all_iterations <- expand.grid(d, models, horizons, lon, lat, loc_id) 
+  colnames(all_iterations) <- c("date", "model", "horizon", "lon", "lat", "loc_id")
+  
+  gefs_extr <- pmap(.l = list(all_iterations$date,
+                              all_iterations$model,
+                              all_iterations$horizon,
+                              all_iterations$lon,
+                              all_iterations$lat,
+                              all_iterations$loc_id),
+                    .f = get_gefs_p25_archive_point) %>% 
+    bind_rows()
+  
+  write_feather(gefs_extr, paste0("data/forecasts/gefs_p25_", d, ".feather"))
+} 
 
 
 # 2023 --------------------------------------------------------------------
@@ -103,17 +95,19 @@ date_list_2023 <- format(
   seq.Date(ymd("2023-05-01"), ymd("2023-11-01"), by = "1 day"),
   "%Y%m%d")
 
-all_data_2023 <- expand.grid(date_list_2023, models, horizons, lon, lat, loc_id) 
-colnames(all_data_2023) <- c("date", "model", "horizon", "lon", "lat", "loc_id")
-
-gefs_2023 <- pmap(.l = list(all_data_2023$date,
-                            all_data_2023$model,
-                            all_data_2023$horizon,
-                            all_data_2023$lon,
-                            all_data_2023$lat,
-                            all_data_2023$loc_id),
-                  .f = get_gefs_p25_archive_point) %>% 
-  bind_rows()
-
-write_feather(gefs_2023, "data/forecasts/gefs_p25_2023.feather")
-
+for (d in date_list_2023) {
+  message(paste0("Retrieving forecasts for ", d))
+  all_iterations <- expand.grid(d, models, horizons, lon, lat, loc_id) 
+  colnames(all_iterations) <- c("date", "model", "horizon", "lon", "lat", "loc_id")
+  
+  gefs_extr <- pmap(.l = list(all_iterations$date,
+                              all_iterations$model,
+                              all_iterations$horizon,
+                              all_iterations$lon,
+                              all_iterations$lat,
+                              all_iterations$loc_id),
+                    .f = get_gefs_p25_archive_point) %>% 
+    bind_rows()
+  
+  write_feather(gefs_extr, paste0("data/forecasts/gefs_p25_", d, ".feather"))
+} 
