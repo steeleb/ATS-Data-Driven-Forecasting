@@ -2,6 +2,7 @@ library(tidyverse)
 library(sf)
 library(aws.s3)
 library(feather)
+library(stars)
 
 get_gefs_p25_archive_point <- function(date, model, horizon, lat, lon, loc_id) {
   tryCatch(
@@ -57,7 +58,7 @@ models <- c("gec00", "gep01", "gep02", "gep03", "gep04", "gep05", "gep06",
             "gep21", "gep22", "gep23", "gep24", "gep25", "gep26", "gep27",
             "gep28", "gep29", "gep30")
 
-horizons <- c("012", "036", "060", "084", "108", "132", "156", "190", "214")
+horizons <- c("012", "036", "060", "084", "108", "132", "156", "180", "204", "228")
 
 lon <- 105.85
 lat <- 40.22

@@ -2,6 +2,7 @@ library(tidyverse)
 library(sf)
 library(aws.s3)
 library(feather)
+library(stars)
 
 get_gefs_p5_archive_point <- function(date, model, horizon, lat, lon, loc_id) {
   tryCatch(
