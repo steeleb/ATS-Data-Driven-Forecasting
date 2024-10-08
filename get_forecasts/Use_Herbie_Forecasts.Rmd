@@ -3,32 +3,39 @@ title: "Get Herbie Forecasts 2022/2023"
 author: "ROSSyndicate"
 date: "2024-10-07"
 output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
 ---
 
 # Background
 
 ## Using Herbie Module to extract the data from a gridded forecast file
 
-This script uses the Herbie module to extract the data from a gridded forecast 
-file and is based on the [Herbie documentation](https://herbie.readthedocs.io/en/latest/). 
-The Herbie module is a Python library that provides a simple interface to access 
-gridded forecast data from various sources. It can be used to extract data from 
-a variety of forecast models, including GFS, ECMWF, and ICON.
+This script uses the Python module Herbie to extract the data from a
+gridded forecast file at a specific location. See [Herbie
+documentation](https://herbie.readthedocs.io/en/latest/) for additional
+info. The Herbie module is a Python library that provides a simple
+interface to access gridded forecast data from various sources. It can
+be used to extract data from a variety of forecast models, including
+GFS, ECMWF, and ICON.
 
-I initally coded this up in a Python Notebook to test functionality. See 
-`get_forecasts/Herbie_Extract_GEFS_Point.ipynb` for that walk through. 
+I initally coded this up in a Python Notebook to test functionality. See
+`get_forecasts/Herbie_Extract_GEFS_Point.ipynb` for that walk through.
 
 ## Create/Activate Conda Environment for Herbie Extracion
 
-Best to use this script with a python environment, so we'll make that using a 
-helper script `herbie_py_setup.R`, which installs herbie and any additional
-necessary modules. 
+Best to use this script with a python environment, so we'll make that
+using a helper script `herbie_py_setup.R`, which installs herbie and any
+additional necessary modules.
 
 ```{r}
 library(reticulate)
 
 source('get_forecasts/herbie_py_setup.R')
 ```
+
+## Load modules
 
 And now, load all the modules needed for this script.
 
@@ -42,6 +49,8 @@ import pandas as pd
 import xarray as xr
 import itertools
 ```
+
+## Store objects and functions
 
 And store the objects and functions needed
 
@@ -82,12 +91,17 @@ def get_gefs(date, member, fxx):
 
 ```
 
-And now pull it all together, we'll do this by for-loop in case we need to restart at any point
+## Loop through dates
+
+And now pull it all together, we'll do this by for-loop in case we need
+to restart at any point due to the length of time this takes (\~20m for
+each day of data).
 
 ```{python}
 start_date = "2022-05-01"
 end_date = "2022-11-01"
 date_list = pd.date_range(start_date, end_date)
+# convert to string
 DATESEQUENCE = [date.strftime('%Y-%m-%d') for date in date_list]
 
 for date in DATESEQUENCE:
@@ -101,4 +115,3 @@ for date in DATESEQUENCE:
   final_result.to_csv(("data/herbie_extraction/GEFS_p25_"+date+".csv"), index=False)
 
 ```
-
