@@ -8,7 +8,11 @@ output: html_document
 # Purpose
 
 This script walks through acquisition of archived NOAA GEFS forecasts for the
-Three Lakes System. 
+Three Lakes System. This takes about 7m per date at 0.5deg resolution and closer 
+to 30m for 0.25 resolution. After playing around, it is more efficient to use
+Herbie in a Python environment (19m per date for 0.25 deg resolution), so just
+archiving this as a how-to and/or intro, but not as 'functional' code per-se.
+
 
 ``` {r}
 library(tidyverse)
