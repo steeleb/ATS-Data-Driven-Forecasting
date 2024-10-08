@@ -115,3 +115,24 @@ for date in DATESEQUENCE:
   final_result.to_csv(("data/herbie_extraction/GEFS_p25_"+date+".csv"), index=False)
 
 ```
+
+And for 2023
+
+```{python}
+start_date = "2023-05-01"
+end_date = "2023-11-01"
+date_list = pd.date_range(start_date, end_date)
+# convert to string
+DATESEQUENCE = [date.strftime('%Y-%m-%d') for date in date_list]
+
+for date in DATESEQUENCE:
+  print("Beggining extraction of forecasts for "+date)
+  results = []
+  for member, fxx in itertools.product(member_list, fxx_list):
+      results.append(get_gefs(date, member, fxx))
+  # Combine all results into a single DataFrame
+  final_result = pd.concat(results, keys=[(m, f) for m, f in itertools.product(member_list, fxx_list)])
+  # write dataframe
+  final_result.to_csv(("data/herbie_extraction/GEFS_p25_"+date+".csv"), index=False)
+
+```
