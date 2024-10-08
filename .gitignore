@@ -1,8 +1,19 @@
+# R stuff to not track
 .Rproj.user
 .Rhistory
 .RData
 .Ruserdata
 
+# python environment stuff
+herbie_env/
+
+# Mac artifacts
 *.DS_Store
+
+# don't track the symlink contents
 data/
+
+# dont track some of the temp output
 temp.grb2
+get_forecasts/
+download.grib
