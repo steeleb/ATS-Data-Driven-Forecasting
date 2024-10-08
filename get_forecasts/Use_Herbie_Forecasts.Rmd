@@ -1,0 +1,104 @@
+---
+title: "Get Herbie Forecasts 2022/2023"
+author: "ROSSyndicate"
+date: "2024-10-07"
+output: html_document
+---
+
+# Background
+
+## Using Herbie Module to extract the data from a gridded forecast file
+
+This script uses the Herbie module to extract the data from a gridded forecast 
+file and is based on the [Herbie documentation](https://herbie.readthedocs.io/en/latest/). 
+The Herbie module is a Python library that provides a simple interface to access 
+gridded forecast data from various sources. It can be used to extract data from 
+a variety of forecast models, including GFS, ECMWF, and ICON.
+
+I initally coded this up in a Python Notebook to test functionality. See 
+`get_forecasts/Herbie_Extract_GEFS_Point.ipynb` for that walk through. 
+
+## Create/Activate Conda Environment for Herbie Extracion
+
+Best to use this script with a python environment, so we'll make that using a 
+helper script `herbie_py_setup.R`, which installs herbie and any additional
+necessary modules. 
+
+```{r}
+library(reticulate)
+
+source('get_forecasts/herbie_py_setup.R')
+```
+
+And now, load all the modules needed for this script.
+
+```{python}
+from herbie import Herbie
+from metpy.units import units
+import matplotlib.pyplot as plt
+from herbie.toolbox import EasyMap, pc, ccrs
+import numpy as np
+import pandas as pd
+import xarray as xr
+import itertools
+```
+
+And store the objects and functions needed
+
+```{python}
+# saving the location for weather that we want - in this case Shadow Mountain 
+# Reservoir
+point = pd.DataFrame.from_dict({"longitude": [-105.85], "latitude": [40.22], "stid": ["smr"]}, orient="columns")
+
+# and store the function to grab Herbie data from a specific point
+def get_data(df, point):
+    extracted = df.herbie.pick_points(points = point, method = "nearest")
+    return extracted.to_dataframe()
+
+# list the members we care about (all of them)
+member_list  = ("c00", "p01", "p02", "p03", "p04", "p05", "p06",
+  "p07", "p08", "p09", "p10", "p11", "p12", "p13", 
+  "p14", "p15", "p16", "p17", "p18", "p19", "p20",
+  "p21", "p22", "p23", "p24", "p25", "p26", "p27",
+  "p28", "p29", "p30")
+
+# list the forecast intervals we care about (time 0 as well as noon-local for 7 days)
+fxx_list = (0, 12, 36, 60, 84, 108, 132, 156)#, 180, 204, 228)
+
+# create the function to get the data we need using herbie
+def get_gefs(date, member, fxx):
+    dt = str(date + " 06:00") # 6UTC is approximately midnight here
+    H = Herbie(dt, model='gefs', product="atmos.25", member = member, fxx = fxx)
+    ds = H.xarray("TMP|[U|V]GRD|GUST|TMAX|TMIN|D[S|L]WRF")
+    result = [get_data(df, point) for df in ds]
+    result = pd.concat(result, axis=1)
+    # Get the column names
+    cols = result.columns
+    # Create a boolean mask for columns to keep
+    mask = ~cols.duplicated(keep='first')
+    # Use the mask to select only non-duplicated columns
+    result = result.loc[:, mask]
+    return result
+
+```
+
+And now pull it all together, we'll do this by for-loop in case we need to restart at any point
+
+```{python}
+start_date = "2022-05-01"
+end_date = "2022-11-01"
+date_list = pd.date_range(start_date, end_date)
+DATESEQUENCE = [date.strftime('%Y-%m-%d') for date in date_list]
+
+for date in DATESEQUENCE:
+  print("Beggining extraction of forecasts for "+date)
+  results = []
+  for member, fxx in itertools.product(member_list, fxx_list):
+      results.append(get_gefs(date, member, fxx))
+  # Combine all results into a single DataFrame
+  final_result = pd.concat(results, keys=[(m, f) for m, f in itertools.product(member_list, fxx_list)])
+  # write dataframe
+  final_result.to_csv(("data/herbie_extraction/GEFS_p25_"+date+".csv"), index=False)
+
+```
+
