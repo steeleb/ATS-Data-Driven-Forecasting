@@ -1,0 +1,44 @@
+---
+title: "Assignment 2 Check In"
+author: "B Steele"
+format: html
+editor: visual
+# jupyter: python3
+---
+
+\
+[GitHub link](https://github.com/steeleb/ATS-Data-Driven-Forecasting)
+
+Progress:
+
+-   acquired all of 2022 GEFS 0.25 forecasts to drive water temperature forecasts
+
+Challenges:
+
+## Scientific Motivation and Problem Statement
+
+Water temperature is often an indicator of water quality, as it governs much of the biological activity in freshwater systems. While temperature is an important parameter to monitor in freshwater lakes, manual monitoring of waterbodies (by physically visiting a site) and sensor network deployment to monitor water temperature are costly endeavors. Northern Water, the municipal subdistrict that delivers drinking water to approximately 1 million people in northern Colorado and irrigation water for \~600,000 acres of land, has had recurring issues with water clarity in Grand Lake, the deepest natural lake in Colorado. They believe that the clarity issues in Grand Lake are primarily due to algal and diatom growth in Shadow Mountain reservoir which are pushed into Grand when they initiate pumping operations. Clarity in Grand is regulated by Senate Document 80 which dates back to 1937 and the inception of the Colorado Big-Thompson project, however in 2016 stakeholders and operators adopted a system of "goal qualifiers" for Grand. The goal qualifiers are defined through Secchi disc depth measurements (a measure of water clarity), requiring a 3.8-meter Secchi depth average and 2.5-meter Secchi depth daily minimum to be met throughout the July 1 to September 11 regulatory season.  
+
+Water in the Three Lakes System naturally flows from Grand into Shadow Mountain into Granby, but pumping operations reverse that by pumping cold water from Granby reservoir into Shadow Mountain and then into Grand and into the tunnel to serve the Front Range (@fig-cartoon). Northern suspects there is a biological "sweet spot" for water temperature in Shadow Mountain Reservoir that may reduce algal and diatom growth and therefore mitigate clarity impacts during pumping operations.
+
+The optimal temperature for reducing algal growth is to keep the upper 1m of water less than 15°C and to reduce diatom growth is to keep the average temperature of 0-5m ("integrated depth") greater than 14°C, which is a bit of a "Goldilocks" problem. A preliminary auto-regressive neural network model predicted tomorrow's water temperature reliably and better than or similar to a persistence model for the regulatory season during 2022 (@fig-res1m22, @fig-resint22). Using SHAP analysis (a method of explainable AI for neural networks) we found that operational pumping has an impact on tomorrow's temperature (@fig-shap1m22, @fig-shapint22), though the impact of operations on the integrated depth is stronger than the upper 1m. This leads me to believe that the operations could be used as a "knob" to control water temperature to some extent in the Three Lakes System.
+
+The overarching goal is to create a decision support system that forecasts water temperature in Shadow Mountain Reservoir on a daily timestep to a horizon of seven days, since the operations of the pump over the previous seven days are the most influential operations variable from the preliminary model. Initially, this application will assume a constant operational pumping regime (where the previous day's pumping is continued throughout the forecast horizon), but the intention is to eventually add an operational "knob" that would alter pumping operations as a mechanism to mitigate water temperature within the forecast application and attempt to reach the "Goldilocks" range during the regulatory period. Adding that knob is likely out of scope for this class, so instead, I will focus on reliable 7-day forecasts using an auto-regressive neural network.
+
+## Example Forecast
+
+-   an example forecast with the forecast system
+
+## Metrics and baselines
+
+-   discussion of the metrics you will use to evaluate the forecasts
+
+-   discussion of the relevant baselines
+
+## Forecast Evaluation
+
+-   evaluation of the forecasts on a validation/testing set using chosen metrics
+
+-   comparison of forecast skill compared to the baselines
+
+-   discussion of whether the output is or is not “reasonable” in your judgment (e.g. physically consistent, overfitting, values within known physical ranges, …)
