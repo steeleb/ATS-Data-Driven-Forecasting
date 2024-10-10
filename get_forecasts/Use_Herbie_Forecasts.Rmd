@@ -97,6 +97,11 @@ And now pull it all together, we'll do this by for-loop in case we need
 to restart at any point due to the length of time this takes (\~20m for
 each day of data).
 
+First for 2022. If this fails, look in the output folder and restart by changing
+the start date.
+
+Failed dates: 2022-09-21
+
 ```{python}
 start_date = "2022-05-01"
 end_date = "2022-11-01"
@@ -117,7 +122,6 @@ for date in DATESEQUENCE:
 ```
 
 And for 2023
-
 ```{python}
 start_date = "2023-05-01"
 end_date = "2023-11-01"
