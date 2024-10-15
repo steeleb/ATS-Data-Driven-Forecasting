@@ -100,10 +100,10 @@ each day of data).
 First for 2022. If this fails, look in the output folder and restart by changing
 the start date.
 
-Failed dates: 2022-09-21
+Failed dates: 2022-09-21, 2022-09-22
 
 ```{python}
-start_date = "2022-10-12"
+start_date = "2022-05-01"
 end_date = "2022-11-01"
 date_list = pd.date_range(start_date, end_date)
 # convert to string
