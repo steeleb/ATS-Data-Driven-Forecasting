@@ -1,7 +1,7 @@
 ---
 title: "Assignment 2 Check In"
 author: "B Steele"
-format: html
+format: pdf
 editor: visual
 # jupyter: python3
 ---
@@ -11,11 +11,18 @@ editor: visual
 
 Progress:
 
--   acquired all of 2022 GEFS 0.25 forecasts to drive water temperature forecasts
+-   acquired all of 2022 and 2023 GEFS 0.25 forecasts to drive water temperature forecasts using a roll out technique
+-   adapted the data-driven model architecture from predicting tomorrow's temperature from today and previous data to predicting tomorrow's temperature based on today and the observed met for tomorrow
 
 Challenges:
 
+-   the general logistics of creating a pipeline to roll out these forecasts, since many of them include summaries of past days of met data... just an operational hurdle in general
+
+-   similarly, logistics of calculating CRPS/skill for this dataset
+
 ## Scientific Motivation and Problem Statement
+
+\[copy/paste from previous assignment\]
 
 Water temperature is often an indicator of water quality, as it governs much of the biological activity in freshwater systems. While temperature is an important parameter to monitor in freshwater lakes, manual monitoring of waterbodies (by physically visiting a site) and sensor network deployment to monitor water temperature are costly endeavors. Northern Water, the municipal subdistrict that delivers drinking water to approximately 1 million people in northern Colorado and irrigation water for \~600,000 acres of land, has had recurring issues with water clarity in Grand Lake, the deepest natural lake in Colorado. They believe that the clarity issues in Grand Lake are primarily due to algal and diatom growth in Shadow Mountain reservoir which are pushed into Grand when they initiate pumping operations. Clarity in Grand is regulated by Senate Document 80 which dates back to 1937 and the inception of the Colorado Big-Thompson project, however in 2016 stakeholders and operators adopted a system of "goal qualifiers" for Grand. The goal qualifiers are defined through Secchi disc depth measurements (a measure of water clarity), requiring a 3.8-meter Secchi depth average and 2.5-meter Secchi depth daily minimum to be met throughout the July 1 to September 11 regulatory season.  
 
@@ -29,16 +36,66 @@ The overarching goal is to create a decision support system that forecasts water
 
 -   an example forecast with the forecast system
 
+    1\) operational forecast: use actual pumping/inflow for future days/forecast outlook to show the skill added with those data
+
+    2\) persistence forecast: use static pump/inflow data but otherwise rollout the forecast like operational - this will start to get at whether or not the 'pump' lever has any impact on our forecasts
+
+    3\) null forecast: yesterday is today and tomorrow and the day after, but with noise
+
 ## Metrics and baselines
 
 -   discussion of the metrics you will use to evaluate the forecasts
 
+    -   CRPS and forecast skill - e.g. [Woelmer et al 2024](https://www.sciencedirect.com/science/article/pii/S1574954124003674) - *CRPS_o = CRPS of operational forecast; CRPS_n = CRPS of null forecast* (could also replace CRPS_n with CRPS_p - the CRPS of persistence model)
+
+$$
+Forecast Skill = 1 - CRPS_o/CRPS_n
+$$
+
 -   discussion of the relevant baselines
 
+    -   persistence is probably the 'best' baseline. In order to actually assess skill at the pump operations, though, we need to address the value of including pumping operations
+
 ## Forecast Evaluation
+
+First step: assess the data-driven model's ability to predict tomorrow's temperature based on observed data, aka, can we even trust this?
+
++-----------------------+--------+--------+---------+---------+----------+----------+-----------+-----------+
+| Model                 | MSE 1m | MAE 1m | RMSE 1m | MAPE 1m | MSE 0-5m | MAE 0-5m | RMSE 0-5m | MAPE 0-5m |
++:=====================:+:======:+:======:+:=======:+:=======:+:========:+:========:+:=========:+:=========:+
+| Preliminary Model     | 0.27   | 0.43   | 0.52    | 2%      | 0.09     | 0.24     | 0.30      | 2%        |
+|                       |        |        |         |         |          |          |           |           |
+| (without today's met) |        |        |         |         |          |          |           |           |
++-----------------------+--------+--------+---------+---------+----------+----------+-----------+-----------+
+| Operational Model     | 0.27   | 0.41   | 0.49    | 2%      | 0.08     | 0.24     | 0.30      | 2%        |
+|                       |        |        |         |         |          |          |           |           |
+| (with today's met)    |        |        |         |         |          |          |           |           |
++-----------------------+--------+--------+---------+---------+----------+----------+-----------+-----------+
+| Persistence Baseline  | 0.24   | 0.40   |         |         | 0.11     | 0.28     |           |           |
++-----------------------+--------+--------+---------+---------+----------+----------+-----------+-----------+
+
+Operational forecast model performs slightly better than the preliminary model for the test year 2022 at 1mdepth, but not better than persistence in model development. This is to be expected, as 2022 had some of the highest water temperatures on record. Additionally, sensical that this improves the 1m predictions slightly as those are driven by met variables a bit more. \[\[I wanted to add some SHAP plots, but my SHAP code is broken... sooooo no SHAP here.\]\]
+
+Next step: assess the rollout/forecast skill... but I need to roll it out first... and then will address:
 
 -   evaluation of the forecasts on a validation/testing set using chosen metrics
 
 -   comparison of forecast skill compared to the baselines
 
 -   discussion of whether the output is or is not “reasonable” in your judgment (e.g. physically consistent, overfitting, values within known physical ranges, …)
+
+Figures:
+
+Preliminary model test timeseries of residuals:
+
+![](images/prelim_res_1m.png)
+
+![](images/prelim_res_05m.png)
+
+Operational model test timeseries of residuals:
+
+![](images/operation_res_1m.png)
+
+![](images/operation_res_05m.png)
+
+Pretty imperceptible differences and we already thought the preliminary model was acceptable, so headed in the right direction.
