@@ -13,7 +13,3 @@ herbie_env/
 # don't track the symlink contents
 data/
 
-# dont track some of the temp output
-temp.grb2
-get_forecasts/
-download.grib
