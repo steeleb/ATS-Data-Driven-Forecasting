@@ -1,0 +1,242 @@
+---
+title: "03_test_set_preprocess_baseline"
+author: "ROSSyndicate"
+date: "2024-10-15"
+output: html_document
+---
+
+# Purpose
+
+This script preprocessing the test set (like we did with the training data in 
+01_preprocessing.Rmd) and also calculates a baseline to compare model performance
+to. 
+
+### Set up env
+
+```{r}
+source('pySetup.R')
+```
+
+### import modules for  script
+
+```{python}
+# import modules
+import os
+import sys
+import pandas as pd
+import numpy as np
+from datetime import date
+import pickle
+from sklearn.metrics import mean_squared_error, mean_absolute_error, mean_absolute_percentage_error
+
+```
+
+### Load files!
+
+```{python}
+file_path = os.path.expanduser("/Users/steeleb/Documents/GitHub/NASA-NW/data/NN_train_val_test/SMR_forecast//")
+
+# import test data
+t2022_fn = os.path.join(file_path, "test2022_v2024-10-15.csv")
+t2022 = pd.read_csv(t2022_fn, sep=',')
+t2023_fn = os.path.join(file_path, "test2023_v2024-10-15.csv")
+t2023 = pd.read_csv(t2023_fn, sep=',')
+
+test = pd.concat([t2022, t2023])
+```
+
+## Pre-process test set
+
+In the training/validation sets, we transformed max wind sweed, precipitation, 
+minimum flow at Chipmunk Lane, and the North Fork q parameters. Let's do that 
+here:
+
+```{python}
+test_no_mean_temp = test.drop(test.filter(like = "mean_temp").columns, axis = 1)
+mean_temp = test.filter(like = "mean_temp", axis = 1)
+mean_temp = np.square(mean_temp)
+
+test2 = pd.concat([test_no_mean_temp, mean_temp], axis = 1)
+
+test_no_max_wind = test2.drop(test2.filter(like = 'max_wind').columns, axis = 1)
+max_wind = test2.filter(like = 'max_wind')
+max_wind = np.square(max_wind)
+
+test3 = pd.concat([test_no_max_wind, max_wind], axis = 1)
+
+test_no_precip = test3.drop(test3.filter(like = 'precip').columns, axis = 1)
+tot_precip = test3.filter(like='precip')
+tot_precip += 0.1
+tot_precip = np.log(tot_precip)
+
+test4 = pd.concat([test_no_precip, tot_precip], axis = 1)
+
+test_no_minchip = test4.drop(test4.filter(like = 'min_chip').columns, axis = 1)
+min_chip = test4.filter(like='min_chip')
+min_chip = np.abs(min_chip)
+min_chip += 0.1
+min_chip = np.sqrt(min_chip)
+
+test5 = pd.concat([test_no_minchip, min_chip], axis = 1)
+
+nf = test5.filter(like='NF')
+test_no_NF = test5.drop(nf.columns, axis = 1)
+nf = np.log(nf)
+
+test6 = pd.concat([test_no_NF, nf], axis = 1)
+
+test_no_noon_wind = test6.drop("noon_ave_wind", axis = 1)
+noon_wind = test6.filter(like = "noon_ave_wind")
+noon_wind += 0.1
+noon_wind = np.log(noon_wind)
+
+test7 = pd.concat([test_no_noon_wind, noon_wind], axis = 1)
+
+tv_no_gust = test7.drop("noon_wind_gust", axis = 1)
+noon_gust = test7.filter(like = "noon_wind_gust")
+noon_gust += 0.1
+noon_gust = np.log(noon_gust)
+
+test8 = pd.concat([tv_no_gust, noon_gust], axis = 1)
+
+tv_no_noon_sol = test8.drop("noon_solar_rad", axis = 1)
+noon_solar = test8.filter(like = "noon_solar_rad")
+noon_solar += 0.1
+noon_solar = np.log(noon_solar)
+
+test9 = pd.concat([tv_no_noon_sol, noon_solar], axis = 1)
+
+```
+
+And then we need to standardize using the values from train/test, but we need
+to split them back into the t2022 and t2023 first (since they have different
+standardizations).
+
+```{python}
+test9['date'] = pd.to_datetime(test9['date'], utc = True)
+t2022 = test9.loc[test9['date'].between('2022-01-01', '2023-01-01')]
+t2023 = test9.loc[test9['date'].between('2023-01-01', '2024-01-01')]
+
+mean_std_t2022 = pd.read_csv(os.path.join(file_path, "mean_std_train_val_t2022_v2024-10-15.csv"), sep=',')
+mean_std_t2023 = pd.read_csv(os.path.join(file_path, "mean_std_train_val_t2023_v2024-10-15.csv"), sep=',')
+
+# set index to first column, renamed 'feature'
+mean_std_t2022 = mean_std_t2022.rename(columns={"Unnamed: 0": "feature"}).set_index("feature")
+mean_std_t2023 = mean_std_t2023.rename(columns={"Unnamed: 0": "feature"}).set_index("feature")
+```
+
+Now, we'll standardize the data so that all the values are between -1 and 1 
+according to the mean and standard devaition of the test/train set
+
+```{python}
+def standardize_column(df, col_name, mean, std):
+    col = df[col_name]
+    return (col - mean) / std
+
+# drop date columns (which aren't standardized or fed into the model)
+t2022_s = t2022.drop(columns = 'date')
+t2023_s = t2023.drop(columns = 'date')
+
+# apply standardize_column function to all columns of df
+t2022_standard = t2022_s.apply(lambda col: standardize_column(t2022_s, col.name, mean_std_t2022.loc[col.name, 'mean'], mean_std_t2022.loc[col.name, 'std']))
+t2023_standard = t2023_s.apply(lambda col: standardize_column(t2023_s, col.name, mean_std_t2023.loc[col.name, 'mean'], mean_std_t2023.loc[col.name, 'std']))
+
+t2022_standard = pd.concat([t2022['date'], t2022_standard], axis = 1)
+t2023_standard = pd.concat([t2023['date'], t2023_standard], axis = 1)
+```
+
+And now, save these files:
+```{python}
+# save the file
+fn = os.path.join(file_path, "t2022_standardized_v2024-10-15.csv")
+t2022_standard.to_csv(fn, index=False)
+
+fn = os.path.join(file_path, ("t2023_standardized_v2024-10-15.csv"))
+t2023_standard.to_csv(fn, index = False)
+```
+
+## Calculate Baseline
+
+For this model, we just want to make sure that the performance is better than 
+'yesterday is today'. To test this, we'll use the actual values from the testing
+set, comparing yesterday's temp to todays temp, where we treat yesterday's temp 
+as y-hat.
+
+### for testing 2022
+
+We also need to limit the baseline to the dates where NW is regulated (Jun 1-Sep 11)
+
+```{python}
+reg_start_t2022 = '2022-07-01'
+reg_end_t2022 = '2022-09-11'
+t2022_s = t2022.loc[t2022['date'].between(reg_start_t2022, reg_end_t2022, inclusive = 'both')]
+
+reg_start_t2023 = '2023-07-01'
+reg_end_t2023 = '2023-09-11'
+t2023_s = t2023.loc[t2023['date'].between(reg_start_t2023, reg_end_t2023, inclusive = 'both')]
+
+```
+
+Calculate baseline for test year 2022:
+
+```{python}
+baseline_t2022_1m = t2022_s.filter(like="mean_1m_temp_degC")
+baseline_t2022_05m = t2022_s.filter(like = "mean_0_5m_temp_degC")
+
+def print_error_metrics(error_metric_name, y, y_hat):
+    t_mse = mean_squared_error(y, y_hat)
+    t_mae = mean_absolute_error(y, y_hat)
+    print(error_metric_name)
+    print("Mean Squared Error for", error_metric_name, ":", t_mse)
+    print("Mean Absolute Error for", error_metric_name, ":", t_mae)
+    print(' ')
+
+
+print_error_metrics("1m baseline", 
+                    baseline_t2022_1m['mean_1m_temp_degC'], 
+                    baseline_t2022_1m['y_mean_1m_temp_degC'])
+print_error_metrics("0-5m baseline", 
+                    baseline_t2022_05m['mean_0_5m_temp_degC'], 
+                    baseline_t2022_05m['y_mean_0_5m_temp_degC'])
+```
+
+1m baseline
+Mean Squared Error for 1m baseline : 0.26
+Mean Absolute Error for 1m baseline : 0.42
+
+0-5m baseline
+Mean Squared Error for 0-5m baseline : 0.11
+Mean Absolute Error for 0-5m baseline : 0.27
+
+Calculate baseline for test year 2023:
+
+```{python}
+baseline_t2023_1m = t2023_s.filter(like="mean_1m_temp_degC")
+baseline_t2023_05m = t2023_s.filter(like = "mean_0_5m_temp_degC")
+
+def print_error_metrics(error_metric_name, y, y_hat):
+    t_mse = mean_squared_error(y, y_hat)
+    t_mae = mean_absolute_error(y, y_hat)
+    print(error_metric_name)
+    print("Mean Squared Error for", error_metric_name, ":", t_mse)
+    print("Mean Absolute Error for", error_metric_name, ":", t_mae)
+    print(' ')
+
+
+print_error_metrics("1m baseline", 
+                    baseline_t2023_1m['mean_1m_temp_degC'], 
+                    baseline_t2023_1m['y_mean_1m_temp_degC'])
+print_error_metrics("0-5m baseline", 
+                    baseline_t2023_05m['mean_0_5m_temp_degC'], 
+                    baseline_t2023_05m['y_mean_0_5m_temp_degC'])
+```
+
+
+1m baseline
+Mean Squared Error for 1m baseline : 0.24
+Mean Absolute Error for 1m baseline : 0.37
+
+0-5m baseline
+Mean Squared Error for 0-5m baseline : 0.11
+Mean Absolute Error for 0-5m baseline : 0.26
+ 
