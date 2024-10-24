@@ -13,3 +13,5 @@ herbie_env/
 # don't track the symlink contents
 data/
 
+# python cache files
+*/__pycache__/*
