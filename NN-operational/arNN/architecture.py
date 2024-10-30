@@ -53,3 +53,44 @@ def compile_model(model, settings):
   )
   return model
 
+
+def compile_model_mae(model, settings):
+  model.compile(
+      optimizer=tf.keras.optimizers.Adam(
+        learning_rate=settings["learning_rate"],
+        ),
+      loss=tf.keras.losses.MeanAbsoluteError()
+  )
+  return model
+
+def weighted_mse_loss(y_true, y_pred):
+    weights = tf.constant([0.7, 0.3])
+    squared_difference = tf.square(y_true - y_pred)
+    weighted_squared_difference = squared_difference * weights
+    return tf.reduce_mean(weighted_squared_difference)
+
+def weighted_mae_loss(y_true, y_pred):
+    weights = tf.constant([0.6, 0.4])
+    abs_difference = tf.abs(y_true - y_pred)
+    weighted_abs_difference = abs_difference * weights
+    return tf.reduce_mean(weighted_abs_difference)
+
+def compile_weighted_model(model, settings):
+  model.compile(
+      optimizer=tf.keras.optimizers.Adam(
+        learning_rate=settings["learning_rate"],
+        ),
+      loss=weighted_mse_loss
+  )
+  return model
+
+def compile_wtd_mae_model(model, settings):
+  model.compile(
+      optimizer=tf.keras.optimizers.Adam(
+        learning_rate=settings["learning_rate"],
+        ),
+      loss=weighted_mae_loss
+  )
+  return model
+
+

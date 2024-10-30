@@ -24,7 +24,7 @@ import datetime as dt
 import pickle
 
 # store a date for versioning
-standardize_version = '2024-10-15'
+standardize_version = '2024-10-28'
 ```
 
 # Load files!
@@ -35,6 +35,7 @@ file_path = os.path.expanduser("/Users/steeleb/OneDrive - Colostate/NASA-Norther
 # list the files and get the set that use the test as 2022:
 files = pd.Series(os.listdir(file_path))
 files = files[files.str.contains('t2023')]
+files = files[files.str.contains('2024-10-28')]
 # we just care about the train/val set right now
 tv = files[files.str.contains('trainval')]
 idx = tv.index
@@ -46,9 +47,10 @@ with open(tv_fn) as f:
 
 ```
 
+
 # Transform as needed
 
-We'll use the same transformations as 2022.
+We'll look for skewed data and transform before we standardize
 
 ### Water Temperature:
 
@@ -80,59 +82,38 @@ These look good
 ### Air Temperature:
 
 ```{python}
-min_temp = (pd.DataFrame(tv.filter(like='min_temp').stack())
+temp = (pd.DataFrame(tv.filter(like='noon_air_temp').stack())
               .reset_index(drop=False)
               .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
-min_temp['variable'] = min_temp['variable'].astype('category').cat.reorder_categories(['min_temp_degC_1', 'min_temp_degC_3', 'min_temp_degC_5', 'min_temp_degC_10'])
-mean_temp = (pd.DataFrame(tv.filter(like='mean_temp').stack())
-              .reset_index(drop=False)
-              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'})
-              .sort_values('variable'))
-mean_temp['variable'] = mean_temp['variable'].astype('category').cat.reorder_categories(['mean_temp_degC_1', 'mean_temp_degC_3', 'mean_temp_degC_5', 'mean_temp_degC_10'])
-max_temp = (pd.DataFrame(tv.filter(like='max_temp').stack())
-              .reset_index(drop=False)
-              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'})
-              .sort_values('variable'))
-max_temp['variable'] = max_temp['variable'].astype('category').cat.reorder_categories(['max_temp_degC_1', 'max_temp_degC_3', 'max_temp_degC_5', 'max_temp_degC_10'])
+temp['variable'] = temp['variable'].astype('category').cat.reorder_categories(['noon_air_temp', 'noon_air_temp_m1', 'noon_air_temp_m2', 'noon_air_temp_m3', 'noon_air_temp_m4', 'noon_air_temp_m5', 'noon_air_temp_m6', 'noon_air_temp_m7'])
 
-(ggplot(min_temp, aes(x = 'value')) 
+(ggplot(temp, aes(x = 'value')) 
   + geom_histogram() 
-  + labs(title = "Minimum Air Temperature")
+  + labs(title = "noon Air Temperature")
   + facet_grid(rows = 'variable')
   + theme_bw()
   )
-(ggplot(mean_temp, aes(x = 'value')) 
-  + geom_histogram() 
-  + labs(title = "Mean Air Temperature")
-  + facet_grid(rows = 'variable')
-  + theme_bw()
-  )
-(ggplot(max_temp, aes(x = 'value')) 
-  + geom_histogram() 
-  + labs(title = "Maximum Air Temperature")
-  + facet_grid(rows = 'variable')
-  + theme_bw()
-  )
+
 ```
 
-Let's transform mean temp here to remove some of the left skew.
+Let's transform temp here to remove some of the left skew.
 
 ```{python}
-tv_no_mean_temp = tv.drop(tv.filter(like = 'mean_temp').columns, axis = 1)
-mean_temp = tv.filter(like = 'mean_temp')
-mean_temp = np.square(mean_temp)
+tv_no_temp = tv.drop(tv.filter(like = 'noon_air_temp').columns, axis = 1)
+temp_only = tv.filter(like = 'noon_air_temp')
+temp_only = np.square(temp_only)
 
-tv2 = pd.concat([tv_no_mean_temp, mean_temp], axis = 1)
+tv2 = pd.concat([tv_no_temp, temp_only], axis = 1)
 
-mean_temp = (pd.DataFrame(tv2.filter(like='mean_temp').stack())
+temp = (pd.DataFrame(tv2.filter(like='noon_air_temp').stack())
               .reset_index(drop=False)
               .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
 
-mean_temp['variable'] = mean_temp['variable'].astype('category').cat.reorder_categories(['mean_temp_degC_1', 'mean_temp_degC_3', 'mean_temp_degC_5', 'mean_temp_degC_10'])
+temp['variable'] = temp['variable'].astype('category').cat.reorder_categories(['noon_air_temp', 'noon_air_temp_m1', 'noon_air_temp_m2', 'noon_air_temp_m3', 'noon_air_temp_m4', 'noon_air_temp_m5', 'noon_air_temp_m6', 'noon_air_temp_m7'])
 
-(ggplot(mean_temp, aes(x = 'value')) 
+(ggplot(temp, aes(x = 'value')) 
   + geom_histogram() 
-  + labs(title = "Mean Temperature (deg C)")
+  + labs(title = "Noon Temperature, square-transformed")
   + facet_grid(rows = 'variable')
   + theme_bw()
   )
@@ -140,128 +121,82 @@ mean_temp['variable'] = mean_temp['variable'].astype('category').cat.reorder_cat
 
 ### Wind
 
-```{python}
-min_wind = (pd.DataFrame(tv.filter(like='min_wind').stack())
-              .reset_index(drop=False)
-              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
-min_wind['variable'] = min_wind['variable'].astype('category').cat.reorder_categories(['min_wind_mps_1', 'min_wind_mps_3', 'min_wind_mps_10'])
-mean_wind = (pd.DataFrame(tv.filter(like='mean_wind').stack())
-              .reset_index(drop=False)
-              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
-mean_wind['variable'] = mean_wind['variable'].astype('category').cat.reorder_categories(['mean_wind_mps_1', 'mean_wind_mps_3', 'mean_wind_mps_5', 'mean_wind_mps_10'])
-max_wind = (pd.DataFrame(tv.filter(like='max_wind').stack())
-              .reset_index(drop=False)
-              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
-max_wind['variable'] = max_wind['variable'].astype('category').cat.reorder_categories(['max_wind_mps_1', 'max_wind_mps_3', 'max_wind_mps_10'])
 
-(ggplot(min_wind, aes(x = 'value')) 
+```{python}
+wind = (pd.DataFrame(tv.filter(like='noon_ave_wind').stack())
+              .reset_index(drop=False)
+              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
+wind['variable'] = wind['variable'].astype('category').cat.reorder_categories(['noon_ave_wind', 'noon_ave_wind_m1', 'noon_ave_wind_m2', 'noon_ave_wind_m3', 'noon_ave_wind_m4', 'noon_ave_wind_m5', 'noon_ave_wind_m6', 'noon_ave_wind_m7'])
+
+(ggplot(wind, aes(x = 'value')) 
   + geom_histogram() 
-  + labs(title = "Minimum Wind Speed (mps)")
-  + facet_grid(rows = 'variable')
-  + theme_bw()
-  )
-(ggplot(mean_wind, aes(x = 'value')) 
-  + geom_histogram() 
-  + labs(title = "Mean Wind Speed (mps)")
-  + facet_grid(rows = 'variable')
-  + theme_bw()
-  )
-(ggplot(max_wind, aes(x = 'value')) 
-  + geom_histogram() 
-  + labs(title = "Maximum Wind Speed (mps)")
+  + labs(title = "noon wind speed")
   + facet_grid(rows = 'variable')
   + theme_bw()
   )
 ```
 
-It looks like maximum wind variables need to be transformed here.
+And some transformation here, too.
 
 ```{python}
-tv_no_max_wind = tv2.drop(tv2.filter(like = 'max_wind').columns, axis = 1)
-max_wind = tv2.filter(like = 'max_wind')
-max_wind = np.square(max_wind)
+tv_no_wind = tv2.drop(tv2.filter(like = 'noon_ave_wind').columns, axis = 1)
+wind_only = tv2.filter(like = 'noon_ave_wind')
+wind_only = np.log(wind_only)
 
-tv3 = pd.concat([tv_no_max_wind, max_wind], axis = 1)
+tv3 = pd.concat([tv_no_wind, wind_only], axis = 1)
 
-max_wind = (pd.DataFrame(tv3.filter(like='max_wind').stack())
+wind = (pd.DataFrame(tv3.filter(like='noon_ave_wind').stack())
               .reset_index(drop=False)
               .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
-max_wind['variable'] = max_wind['variable'].astype('category').cat.reorder_categories(['max_wind_mps_1', 'max_wind_mps_3', 'max_wind_mps_5', 'max_wind_mps_10'])
 
-(ggplot(max_wind, aes(x = 'value')) 
+wind['variable'] = wind['variable'].astype('category').cat.reorder_categories(['noon_ave_wind', 'noon_ave_wind_m1', 'noon_ave_wind_m2', 'noon_ave_wind_m3', 'noon_ave_wind_m4', 'noon_ave_wind_m5', 'noon_ave_wind_m6', 'noon_ave_wind_m7'])
+
+(ggplot(wind, aes(x = 'value')) 
   + geom_histogram() 
-  + labs(title = "Maximum Wind Speed (mps)")
+  + labs(title = "Noon Wind, log-transformed")
   + facet_grid(rows = 'variable')
   + theme_bw()
   )
-
 ```
-
-That's a little better.
 
 ### Solar Radiation
 
 ```{python}
-tot_sol_rad = (pd.DataFrame(tv.filter(like='sol_rad').stack())
+sol_rad = (pd.DataFrame(tv.filter(like='solar_rad').stack())
               .reset_index(drop=False)
               .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
-tot_sol_rad['variable'] = tot_sol_rad['variable'].astype('category').cat.reorder_categories(['tot_sol_rad_Wpm2_1', 'tot_sol_rad_Wpm2_3', 'tot_sol_rad_Wpm2_5', 'tot_sol_rad_Wpm2_10'])
+sol_rad['variable'] = sol_rad['variable'].astype('category').cat.reorder_categories(['noon_solar_rad', 'noon_solar_rad_m1', 'noon_solar_rad_m2', 'noon_solar_rad_m3', 'noon_solar_rad_m4', 'noon_solar_rad_m5', 'noon_solar_rad_m6', 'noon_solar_rad_m7'])
 
-(ggplot(tot_sol_rad, aes(x = 'value')) 
+(ggplot(sol_rad, aes(x = 'value')) 
   + geom_histogram(bins = 50) 
-  + labs(title = "Total Solar Radiation")
+  + labs(title = "Noon Solar Radiation")
   + facet_grid(rows = 'variable')
   + theme_bw()
   )
 ```
 
-These look fine!
-
-### Precipitation
+These are pretty skewed, we should trnasform.
 
 ```{python}
-tot_precip = (pd.DataFrame(tv.filter(like='precip').stack())
+tv_no_sr = tv3.drop(tv3.filter(like = 'noon_solar').columns, axis = 1)
+sr_only = tv3.filter(like = 'noon_solar')
+sr_only = np.square(sr_only)
+
+tv4 = pd.concat([tv_no_sr, sr_only], axis = 1)
+
+sol_rad = (pd.DataFrame(tv4.filter(like='noon_solar').stack())
               .reset_index(drop=False)
               .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
-tot_precip['variable'] = tot_precip['variable'].astype('category').cat.reorder_categories(['tot_precip_mm_1', 'tot_precip_mm_3', 'tot_precip_mm_5', 'tot_precip_mm_10'])
 
-(ggplot(tot_precip, aes(x = 'value')) 
-  + geom_histogram(bins = 50) 
-  + labs(title = "Total Precipitation (mm)")
+sol_rad['variable'] = sol_rad['variable'].astype('category').cat.reorder_categories(['noon_solar_rad', 'noon_solar_rad_m1', 'noon_solar_rad_m2', 'noon_solar_rad_m3', 'noon_solar_rad_m4', 'noon_solar_rad_m5', 'noon_solar_rad_m6', 'noon_solar_rad_m7'])
+
+(ggplot(sol_rad, aes(x = 'value')) 
+  + geom_histogram() 
+  + labs(title = "Solar Radiation, log transformed")
   + facet_grid(rows = 'variable')
   + theme_bw()
   )
 ```
-
-Eep! These are super skewed. For these, we'll take the log of the value, but 
-first we need to add 0.1 since most of the values are 0 and log+0 don't play 
-nicely.
-
-```{python}
-tv_no_precip = tv3.drop(tv3.filter(like = 'precip').columns, axis = 1)
-tot_precip = tv3.filter(like='precip')
-tot_precip += 0.1
-tot_precip = np.log(tot_precip)
-
-tv4 = pd.concat([tv_no_precip, tot_precip], axis = 1)
-
-tot_precip = (pd.DataFrame(tv4.filter(like='precip').stack())
-              .reset_index(drop=False)
-              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
-tot_precip['variable'] = tot_precip['variable'].astype('category').cat.reorder_categories(['tot_precip_mm_1', 'tot_precip_mm_3', 'tot_precip_mm_5', 'tot_precip_mm_10'])
-
-(ggplot(tot_precip, aes(x = 'value')) 
-  + geom_histogram(bins = 50) 
-  + labs(title = "Total Precipitation (mm)")
-  + facet_grid(rows = 'variable')
-  + theme_bw()
-  )
-```
-
-That's better, though 0's are arguably problematic - we may want to change this
-to categorical later, 0 = no rain, 1 = some rain, 2 = a lot of rain - to help with 
-this issue. For now, we'll leave it as is.
-
 
 ### Pump
 
@@ -436,72 +371,13 @@ max_nf['variable'] = max_nf['variable'].astype('category').cat.reorder_categorie
 
 Much better.
 
-### Today at noon
-
-```{python}
-noon = tv6.filter(like = "noon")
-
-noon_v = (pd.DataFrame(noon.stack())
-              .reset_index(drop=False)
-              .rename(columns={'level_0':'rowid', 'level_1':'variable', 0:'value'}))
-
-(ggplot(noon_v, aes(x = 'value')) 
-  + geom_histogram(bins = 50) 
-  + labs(title = "Today met at noon")
-  + facet_grid(cols = 'variable', scales = 'free_x')
-  + theme_bw()
-  )
-
-```
-
-Let's transform ave wind, wind gust, solar rad here.
-
-```{python}
-tv_no_noon_wind = tv6.drop("noon_ave_wind", axis = 1)
-noon_wind = tv6.filter(like = "noon_ave_wind")
-noon_wind += 0.1
-noon_wind = np.log(noon_wind)
-
-(ggplot(noon_wind, aes(x = 'noon_ave_wind')) 
-  + geom_histogram(bins = 50) 
-  + labs(title = "transformed noon wind")
-  + theme_bw()
-  )
-
-tv7 = pd.concat([tv_no_noon_wind, noon_wind], axis = 1)
-
-tv_no_gust = tv7.drop("noon_wind_gust", axis = 1)
-noon_gust = tv7.filter(like = "noon_wind_gust")
-noon_gust = np.log(noon_gust+0.1)
-
-(ggplot(noon_gust, aes(x = 'noon_wind_gust')) 
-  + geom_histogram(bins = 50) 
-  + labs(title = "transformed noon wind gust")
-  + theme_bw()
-  )
-
-tv8 = pd.concat([tv_no_gust, noon_gust], axis = 1)
-
-tv_no_noon_sol = tv8.drop("noon_solar_rad", axis = 1)
-noon_solar = tv8.filter(like = "noon_solar_rad")
-noon_solar = np.log(noon_solar+0.1)
-
-(ggplot(noon_solar, aes(x = 'noon_solar_rad')) 
-  + geom_histogram(bins = 50) 
-  + labs(title = "transformed noon solar radiation")
-  + theme_bw()
-  )
-
-tv9 = pd.concat([tv_no_noon_sol, noon_solar], axis = 1)
-
-```
-
+# Reality check and export
 
 Let's do a quick sanity check to make sure we haven't created any additional columns or rows:
 
 ```{python}
 tv.shape
-tv9.shape
+tv6.shape
 ```
 
 Great!
@@ -520,7 +396,7 @@ Before we apply, we want to make a copy of this dataframe and drop the dates
 from it.
 
 ```{python}
-tv_short = tv9.copy()
+tv_short = tv6.copy()
 tv_short = tv_short.drop('date', axis = 1)
 ```
 
@@ -553,7 +429,7 @@ Our training data are now ready to be split into training and validation sets.
 training = tv_standardized.copy()
 
 # but let's add lake and date back in.
-training = training.join(tv9[['date']])
+training = training.join(tv6[['date']])
 ```
 
 We'll do timeseries cross validation here.
