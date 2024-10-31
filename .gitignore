@@ -6,6 +6,7 @@
 
 # python environment stuff
 herbie_env/
+forecast_env/
 
 # Mac artifacts
 *.DS_Store

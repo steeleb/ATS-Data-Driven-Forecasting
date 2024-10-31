@@ -11,7 +11,7 @@ tryCatch(use_condaenv(file.path(getwd(), 'herbie_env')),
          error = function(e) {
            # install miniconda if necessary
            try(install_miniconda())
-           #create a conda environment named 'mod_env' with the packages you need
+           #create a conda environment named 'herbie_env' with the packages you need
            conda_create(envname = file.path(getwd(), 'herbie_env'), 
                         python_version = 3.11)
            conda_install(envname = 'herbie_env/', 
