@@ -10,6 +10,7 @@ This script walks through the visualization of one data-driven forecast
 ```{r}
 library(tidyverse)
 library(feather)
+library(cowplot)
 
 forecast_07072022_7 <- read_csv("run-operational/output/jul07_seven_day.csv") 
 forecast_08202022_7 <- read_csv("run-operational/output/aug20_seven_day.csv")
@@ -40,18 +41,33 @@ test <- make_forecast_summary(forecast_07072022_7)
 ```
 
 ```{r}
-one_m <- ggplot(make_forecast_summary(forecast_07072022_7), aes(x = date)) +
-  geom_ribbon(aes(ymin = min_1m_temp, ymax = max_1m_temp), fill = "grey") +
-  geom_point(data = filter_obs_data(obs, "2022-07-07", 6), aes(x = date, y = mean_1m_temp_degC))  +
-  theme_bw()
+plot_forecast <- function(forecast, date) {
+  
+  summary <- make_forecast_summary(forecast)
+  actual <- filter_obs_data(obs, date, 6)
 
-int_m <- ggplot(make_forecast_summary(forecast_07072022_7), aes(x = date)) +
-  geom_ribbon(aes(ymin = min_0_5m_temp, ymax = max_0_5m_temp), fill = "grey") +
-  geom_point(data = filter_obs_data(obs, "2022-07-07", 6), aes(x = date, y = mean_0_5m_temp_degC))  +
-  theme_bw()
+  one <- ggplot(summary, aes(x = date)) +
+    geom_ribbon(aes(ymin = min_1m_temp, ymax = max_1m_temp), fill = "grey") +
+    geom_point(data = actual, 
+               aes(x = date, y = mean_1m_temp_degC))  +
+    theme_bw() +
+    labs(x = NULL, y = "near-surface water\ntemperature (deg C)")
+    
+    int <- ggplot(summary, aes(x = date)) +
+      geom_ribbon(aes(ymin = min_0_5m_temp, ymax = max_0_5m_temp), fill = "grey") +
+      geom_point(data = actual, 
+                 aes(x = date, y = mean_0_5m_temp_degC))  +
+      theme_bw() +
+      labs(x = NULL, y = "integrated water\ntemperature (deg C)") 
+    
+    plot_grid(one, int, nrow = 2)
+}
+```
 
-cowplot::plot_grid(one_m, int_m, nrow = 2)
-
+```{r}
+plot_forecast(forecast_07072022_7, "2022-07-07")
+plot_forecast(forecast_08202022_7, "2022-08-20")
+plot_forecast(forecast_09112022_7, "2022-09-11")
 
 ```
 
@@ -71,19 +87,4 @@ cowplot::plot_grid(one_m, int_m, nrow = 2)
 
 ```
 
-
-```{r}
-one_m <- ggplot(make_forecast_summary(forecast_09112022_7), aes(x = date)) +
-  geom_ribbon(aes(ymin = min_1m_temp, ymax = max_1m_temp), fill = "grey") +
-  geom_point(data = filter_obs_data(obs, "2022-09-11", 6), aes(x = date, y = mean_1m_temp_degC))  +
-  theme_bw()
-
-int_m <- ggplot(make_forecast_summary(forecast_09112022_7), aes(x = date)) +
-  geom_ribbon(aes(ymin = min_0_5m_temp, ymax = max_0_5m_temp), fill = "grey") +
-  geom_point(data = filter_obs_data(obs, "2022-09-11", 6), aes(x = date, y = mean_0_5m_temp_degC))  +
-  theme_bw()
-
-cowplot::plot_grid(one_m, int_m, nrow = 2)
-
-```
 
