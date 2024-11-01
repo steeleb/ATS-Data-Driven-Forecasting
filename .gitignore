@@ -15,4 +15,4 @@ forecast_env/
 data/
 
 # python cache files
-*/__pycache__/*
+*__pycache__*

@@ -148,7 +148,7 @@ control_rad <- forecast_control %>%
   filter(step == "0 days 12:00:00") %>% 
   mutate(date = date(time))
 
-bias_comp_rad <- left_join(control_rad, obs)
+bias_comp_rad <- left_join(control_rad, w_SMR_today_met)
 
 ggplot(bias_comp_rad, aes(x = noon_solar_rad, y = solar_rad_wpm2)) +
   geom_point()
@@ -179,7 +179,7 @@ Great! Let's move all this to a different script and work on creating a function
 debiased_herbie <- full_join(forecast_2022, forecast_2023) %>% 
   mutate(temp_degC = ((t2m - 273.15) + 0.97)/0.861,
          wind_mps = sqrt(u10^2 + v10^2)/2, #sqrt(mer^2 + zon^2)
-         solar_rad_wpm2 = (sdswrf +100)/0.7) %>% 
+         solar_rad_wpm2 = (sdswrf + 100)/0.7) %>% 
   select(number, time, step, valid_time, temp_degC, wind_mps, solar_rad_wpm2)
 
 write_feather(debiased_herbie, "data/herbie_extraction/compiled_forecast/simple_debias_2022_2023.feather")
