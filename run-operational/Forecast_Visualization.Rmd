@@ -73,18 +73,73 @@ plot_forecast(forecast_09112022_7, "2022-09-11")
 
 
 ```{r}
-one_m <- ggplot(make_forecast_summary(forecast_08202022_7), aes(x = date)) +
-  geom_ribbon(aes(ymin = min_1m_temp, ymax = max_1m_temp), fill = "grey") +
-  geom_point(data = filter_obs_data(obs, "2022-08-20", 6), aes(x = date, y = mean_1m_temp_degC))  +
-  theme_bw()
+library(verification)
 
-int_m <- ggplot(make_forecast_summary(forecast_08202022_7), aes(x = date)) +
-  geom_ribbon(aes(ymin = min_0_5m_temp, ymax = max_0_5m_temp), fill = "grey") +
-  geom_point(data = filter_obs_data(obs, "2022-08-20", 6), aes(x = date, y = mean_0_5m_temp_degC))  +
-  theme_bw()
+summary_for_crps <- forecast_07072022_7 %>% 
+  summarize(mean_1m = mean(mean_1m_temp_degC),
+            std_1m = sd(mean_1m_temp_degC),
+            mean_int = mean(mean_0_5m_temp_degC),
+            std_int = sd(mean_0_5m_temp_degC),
+            .by = date) %>% 
+  left_join(., obs) 
 
-cowplot::plot_grid(one_m, int_m, nrow = 2)
+sum(
+crps(summary_for_crps$mean_1m_temp_degC[1], c(summary_for_crps$mean_1m[1], summary_for_crps$std_1m[1]))$crps,
+crps(summary_for_crps$mean_1m_temp_degC[2], c(summary_for_crps$mean_1m[2], summary_for_crps$std_1m[2]))$crps,
+crps(summary_for_crps$mean_1m_temp_degC[3], c(summary_for_crps$mean_1m[3], summary_for_crps$std_1m[3]))$crps,
+crps(summary_for_crps$mean_1m_temp_degC[4], c(summary_for_crps$mean_1m[4], summary_for_crps$std_1m[4]))$crps,
+crps(summary_for_crps$mean_1m_temp_degC[5], c(summary_for_crps$mean_1m[5], summary_for_crps$std_1m[5]))$crps,
+crps(summary_for_crps$mean_1m_temp_degC[6], c(summary_for_crps$mean_1m[6], summary_for_crps$std_1m[6]))$crps,
+crps(summary_for_crps$mean_1m_temp_degC[7], c(summary_for_crps$mean_1m[7], summary_for_crps$std_1m[7]))$crps
+)/7
 
 ```
+
+```{r}
+
+summary_for_crps <- forecast_08202022_7 %>% 
+  summarize(mean_1m = mean(mean_1m_temp_degC),
+            std_1m = sd(mean_1m_temp_degC),
+            mean_int = mean(mean_0_5m_temp_degC),
+            std_int = sd(mean_0_5m_temp_degC),
+            .by = date) %>% 
+  left_join(., obs) 
+
+sum(
+crps(summary_for_crps$mean_1m_temp_degC[1], c(summary_for_crps$mean_1m[1], summary_for_crps$std_1m[1]))$crps,
+crps(summary_for_crps$mean_1m_temp_degC[2], c(summary_for_crps$mean_1m[2], summary_for_crps$std_1m[2]))$crps,
+crps(summary_for_crps$mean_1m_temp_degC[3], c(summary_for_crps$mean_1m[3], summary_for_crps$std_1m[3]))$crps,
+crps(summary_for_crps$mean_1m_temp_degC[4], c(summary_for_crps$mean_1m[4], summary_for_crps$std_1m[4]))$crps,
+crps(summary_for_crps$mean_1m_temp_degC[5], c(summary_for_crps$mean_1m[5], summary_for_crps$std_1m[5]))$crps,
+crps(summary_for_crps$mean_1m_temp_degC[6], c(summary_for_crps$mean_1m[6], summary_for_crps$std_1m[6]))$crps,
+crps(summary_for_crps$mean_1m_temp_degC[7], c(summary_for_crps$mean_1m[7], summary_for_crps$std_1m[7]))$crps
+)/7
+
+
+```
+
+```{r}
+
+summary_for_crps <- forecast_09112022_7 %>% 
+  summarize(mean_1m = mean(mean_1m_temp_degC),
+            std_1m = sd(mean_1m_temp_degC),
+            mean_int = mean(mean_0_5m_temp_degC),
+            std_int = sd(mean_0_5m_temp_degC),
+            .by = date) %>% 
+  left_join(., obs) 
+
+sum(
+crps(summary_for_crps$mean_1m_temp_degC[1], c(summary_for_crps$mean_1m[1], summary_for_crps$std_1m[1]))$crps,
+crps(summary_for_crps$mean_1m_temp_degC[2], c(summary_for_crps$mean_1m[2], summary_for_crps$std_1m[2]))$crps,
+crps(summary_for_crps$mean_1m_temp_degC[3], c(summary_for_crps$mean_1m[3], summary_for_crps$std_1m[3]))$crps,
+crps(summary_for_crps$mean_1m_temp_degC[4], c(summary_for_crps$mean_1m[4], summary_for_crps$std_1m[4]))$crps,
+crps(summary_for_crps$mean_1m_temp_degC[5], c(summary_for_crps$mean_1m[5], summary_for_crps$std_1m[5]))$crps,
+crps(summary_for_crps$mean_1m_temp_degC[6], c(summary_for_crps$mean_1m[6], summary_for_crps$std_1m[6]))$crps,
+crps(summary_for_crps$mean_1m_temp_degC[7], c(summary_for_crps$mean_1m[7], summary_for_crps$std_1m[7]))$crps
+)/7
+
+
+```
+
 
 
