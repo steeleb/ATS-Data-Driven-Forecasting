@@ -31,7 +31,7 @@ additional necessary modules.
 
 ```{r}
 library(reticulate)
-
+use_condaenv(condaenv = "~/Documents/GitHub/ATS-Data-Driven-Forecasting/herbie_env/")
 source('get_forecasts/herbie_py_setup.R')
 ```
 
@@ -48,6 +48,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import itertools
+import time
 ```
 
 ## Store objects and functions
@@ -55,30 +56,42 @@ import itertools
 And store the objects and functions needed
 
 ```{python}
-# saving the location for weather that we want - in this case Shadow Mountain 
+# saving the locations for weather that we want - in this case Shadow Mountain 
 # Reservoir
-point = pd.DataFrame.from_dict({"longitude": [-105.85], "latitude": [40.22], "stid": ["smr"]}, orient="columns")
+point = pd.DataFrame.from_dict({
+  "longitude": [-105.85], 
+  "latitude": [40.22], 
+  "stid": ["smr"]
+  }, 
+  orient="columns")
 
-# and store the function to grab Herbie data from a specific point
-def get_data(df, point):
-    extracted = df.herbie.pick_points(points = point, method = "nearest")
-    return extracted.to_dataframe()
-
-# list the members we care about (all of them)
+# list the members we care about (all of them) 
 member_list  = ("c00", "p01", "p02", "p03", "p04", "p05", "p06",
   "p07", "p08", "p09", "p10", "p11", "p12", "p13", 
   "p14", "p15", "p16", "p17", "p18", "p19", "p20",
   "p21", "p22", "p23", "p24", "p25", "p26", "p27",
   "p28", "p29", "p30")
 
-# list the forecast intervals we care about (time 0 as well as noon-local for 7 days)
-fxx_list = (0, 12, 36, 60, 84, 108, 132, 156)#, 180, 204, 228)
+# and the forecasts we want (every 3h from 0-168)
+fxx_list = list(np.arange(0, 169, 3, dtype="object"))
 
+# and store the function to grab Herbie data from a specific point
+def get_data(df, point):
+    extracted = df.herbie.pick_points(points = point, method = "nearest")
+    return extracted.to_dataframe()
+  
+
+```
+
+Fast herbie is not that much more quick here and it doesn't allow grabbing solar
+rad because it's not in every timestep, so using traditional herbie
+
+```{python}
 # create the function to get the data we need using herbie
-def get_gefs(date, member, fxx):
+def get_gefs025(date, member, fxx):
     dt = str(date + " 06:00") # 6UTC is approximately midnight here
     H = Herbie(dt, model='gefs', product="atmos.25", member = member, fxx = fxx)
-    ds = H.xarray("TMP|[U|V]GRD|GUST|TMAX|TMIN|D[S|L]WRF")
+    ds = H.xarray("[U|V]GRD|TMP|RH|TMAX|TMIN|DSWRF")
     result = [get_data(df, point) for df in ds]
     result = pd.concat(result, axis=1)
     # Get the column names
@@ -88,7 +101,7 @@ def get_gefs(date, member, fxx):
     # Use the mask to select only non-duplicated columns
     result = result.loc[:, mask]
     return result
-
+  
 ```
 
 ## Loop through dates
@@ -103,8 +116,8 @@ the start date.
 Failed dates: 2022-09-21, 2022-09-22
 
 ```{python}
-start_date = "2022-05-01"
-end_date = "2022-11-01"
+start_date = "2022-06-01"
+end_date = "2022-10-15"
 date_list = pd.date_range(start_date, end_date)
 # convert to string
 DATESEQUENCE = [date.strftime('%Y-%m-%d') for date in date_list]
@@ -114,7 +127,7 @@ for date in DATESEQUENCE:
   results = []
   try:
     for member, fxx in itertools.product(member_list, fxx_list):
-        results.append(get_gefs(date, member, fxx))
+        results.append(get_gefs025(date, member, fxx))
     # Combine all results into a single DataFrame
     final_result = pd.concat(results, keys=[(m, f) for m, f in itertools.product(member_list, fxx_list)])
     # write dataframe
@@ -129,8 +142,8 @@ for date in DATESEQUENCE:
 And for 2023
 
 ```{python}
-start_date = "2023-05-01"
-end_date = "2023-11-01"
+start_date = "2023-06-01"
+end_date = "2023-10-15"
 date_list = pd.date_range(start_date, end_date)
 # convert to string
 DATESEQUENCE = [date.strftime('%Y-%m-%d') for date in date_list]
