@@ -14,5 +14,8 @@ forecast_env/
 # don't track the symlink contents
 data/
 
+# don't track the forecast output
+*/output/*
+
 # python cache files
 *__pycache__*

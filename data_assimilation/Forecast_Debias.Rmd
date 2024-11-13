@@ -30,7 +30,7 @@ For our forecasts, we need to read in all the files, collate them, and then
 just grab the 'right now' and the 6h to compare sw/lw radiation.
 
 ```{r}
-all_forecast_files <- list.files("data/herbie_extraction/", full.names = T)
+all_forecast_files <- list.files("data/herbie_extraction/archive/", full.names = T)
 
 forecast_files_2022 <- all_forecast_files[grepl("2022", all_forecast_files)]
 

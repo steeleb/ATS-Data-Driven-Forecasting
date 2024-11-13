@@ -1,11 +1,13 @@
 ---
-title: "Forecast Visualization"
+title: "Control Forecast Visualization"
 author: "ROSSyndicate"
 date: "2024-11-01"
 output: html_document
 ---
 
-This script walks through the visualization of one data-driven forecast
+This script walks through the visualization of one data-driven forecast for our
+control forecast, where the only thing we change in roll out is autoregressive 
+temperature.
 
 ```{r}
 library(tidyverse)
@@ -26,7 +28,7 @@ make_forecast_summary <- function(forecast) {
               max_1m_temp = max(mean_1m_temp_degC),
               min_0_5m_temp = min(mean_0_5m_temp_degC),
               max_0_5m_temp = max(mean_0_5m_temp_degC),
-              .by = "date")  
+              .by = "valid_date")  
 }
 
 filter_obs_data <- function(observed, forecast_date, forecast_length) {
@@ -41,19 +43,19 @@ test <- make_forecast_summary(forecast_07072022_7)
 ```
 
 ```{r}
-plot_forecast <- function(forecast, date) {
+plot_forecast <- function(forecast, valid_date) {
   
   summary <- make_forecast_summary(forecast)
-  actual <- filter_obs_data(obs, date, 6)
+  actual <- filter_obs_data(obs, valid_date, 6)
 
-  one <- ggplot(summary, aes(x = date)) +
+  one <- ggplot(summary, aes(x = valid_date)) +
     geom_ribbon(aes(ymin = min_1m_temp, ymax = max_1m_temp), fill = "grey") +
     geom_point(data = actual, 
                aes(x = date, y = mean_1m_temp_degC))  +
     theme_bw() +
     labs(x = NULL, y = "near-surface water\ntemperature (deg C)")
     
-    int <- ggplot(summary, aes(x = date)) +
+    int <- ggplot(summary, aes(x = valid_date)) +
       geom_ribbon(aes(ymin = min_0_5m_temp, ymax = max_0_5m_temp), fill = "grey") +
       geom_point(data = actual, 
                  aes(x = date, y = mean_0_5m_temp_degC))  +
@@ -80,7 +82,7 @@ summary_for_crps <- forecast_07072022_7 %>%
             std_1m = sd(mean_1m_temp_degC),
             mean_int = mean(mean_0_5m_temp_degC),
             std_int = sd(mean_0_5m_temp_degC),
-            .by = date) %>% 
+            .by = valid_date) %>% 
   left_join(., obs) 
 
 sum(
