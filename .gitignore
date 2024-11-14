@@ -17,5 +17,8 @@ data/
 # don't track the forecast output
 */output/*
 
+# and don't track the plots
+*/forecast_plots/*
+
 # python cache files
 *__pycache__*

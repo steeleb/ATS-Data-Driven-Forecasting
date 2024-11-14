@@ -1,0 +1,155 @@
+---
+title: "Control Forecast Visualization"
+author: "ROSSyndicate"
+date: "2024-11-01"
+output: html_document
+---
+
+This script walks through the visualization of one data-driven forecast for our
+control forecast, where the only thing we change in roll out is autoregressive 
+temperature.
+
+```{r}
+library(tidyverse)
+library(feather)
+library(cowplot)
+library(ggthemes)
+
+control_forecast_files <- list.files("run-operational/output/control/", full.names = T)
+dates <- str_extract(control_forecast_files, "\\d{4}-\\d{2}-\\d{2}")
+control_forecasts <- map2(.x = control_forecast_files,
+                          .y = dates,
+                          .f = ~read_csv(.x) %>% 
+                            mutate(forecast_date = .y)) %>% 
+  bind_rows()
+
+obs <- read_feather("~/Desktop/w_SM_MID_daily_temp.feather")
+```
+
+
+```{r}
+make_forecast_summary <- function(forecast) {
+  forecast %>% 
+    summarise(min_1m_temp = min(mean_1m_temp_degC),
+              max_1m_temp = max(mean_1m_temp_degC),
+              min_0_5m_temp = min(mean_0_5m_temp_degC),
+              max_0_5m_temp = max(mean_0_5m_temp_degC),
+              .by = "valid_date")  
+}
+
+filter_obs_data <- function(observed, forecast_date, forecast_length) {
+  observed %>% 
+    filter(between(date, ymd(forecast_date) - days(1), ymd(forecast_date) + days(forecast_length)))
+}
+
+plot_forecast <- function(forecast, date_of_forecast) {
+  
+  summary <- make_forecast_summary(forecast)
+  actual <- filter_obs_data(obs, date_of_forecast, 6)
+  
+  one <- ggplot(summary, aes(x = valid_date)) +
+    geom_ribbon(aes(ymin = min_1m_temp, ymax = max_1m_temp), fill = "grey") +
+    geom_point(data = actual, 
+               aes(x = date, y = mean_1m_temp_degC))  +
+    scale_x_date(date_breaks = "1 day") +
+    theme_bw() +
+    theme(panel.grid.minor = element_blank()) +
+    labs(x = NULL, y = "near-surface water\ntemperature (deg C)")
+  
+  int <- ggplot(summary, aes(x = valid_date)) +
+    geom_ribbon(aes(ymin = min_0_5m_temp, ymax = max_0_5m_temp), fill = "grey") +
+    geom_point(data = actual, 
+               aes(x = date, y = mean_0_5m_temp_degC))  +
+    scale_x_date(date_breaks = "1 day") +
+    theme_bw() +
+    theme(panel.grid.minor = element_blank()) +
+    labs(x = NULL, y = "integrated water\ntemperature (deg C)")
+  
+  plot_grid(one, int, nrow = 2)
+}
+```
+
+```{r}
+for (d in dates) {
+  forecast_data <- control_forecasts %>% filter(forecast_date == d)
+  plt <- plot_forecast(forecast_data, d)
+  ggsave(filename = paste0("run-operational/forecast_plots/control/seven_day_forecast_", d, ".png"), 
+         plot = plt, device = "png", width = 8, height = 4, units = "in", dpi = 300)
+}
+
+```
+
+
+
+## this won't run yet ##
+```{r}
+library(verification)
+
+summary_for_crps <- control_forecasts %>% 
+  summarize(mean_1m = mean(mean_1m_temp_degC),
+            std_1m = sd(mean_1m_temp_degC),
+            mean_int = mean(mean_0_5m_temp_degC),
+            std_int = sd(mean_0_5m_temp_degC),
+            .by = c(valid_date, forecast_date)) %>% 
+  left_join(., obs) 
+
+sum(
+  crps(summary_for_crps$mean_1m_temp_degC[1], c(summary_for_crps$mean_1m[1], summary_for_crps$std_1m[1]))$crps,
+  crps(summary_for_crps$mean_1m_temp_degC[2], c(summary_for_crps$mean_1m[2], summary_for_crps$std_1m[2]))$crps,
+  crps(summary_for_crps$mean_1m_temp_degC[3], c(summary_for_crps$mean_1m[3], summary_for_crps$std_1m[3]))$crps,
+  crps(summary_for_crps$mean_1m_temp_degC[4], c(summary_for_crps$mean_1m[4], summary_for_crps$std_1m[4]))$crps,
+  crps(summary_for_crps$mean_1m_temp_degC[5], c(summary_for_crps$mean_1m[5], summary_for_crps$std_1m[5]))$crps,
+  crps(summary_for_crps$mean_1m_temp_degC[6], c(summary_for_crps$mean_1m[6], summary_for_crps$std_1m[6]))$crps,
+  crps(summary_for_crps$mean_1m_temp_degC[7], c(summary_for_crps$mean_1m[7], summary_for_crps$std_1m[7]))$crps
+)/7
+
+```
+
+```{r}
+
+summary_for_crps <- forecast_08202022_7 %>% 
+  summarize(mean_1m = mean(mean_1m_temp_degC),
+            std_1m = sd(mean_1m_temp_degC),
+            mean_int = mean(mean_0_5m_temp_degC),
+            std_int = sd(mean_0_5m_temp_degC),
+            .by = date) %>% 
+  left_join(., obs) 
+
+sum(
+  crps(summary_for_crps$mean_1m_temp_degC[1], c(summary_for_crps$mean_1m[1], summary_for_crps$std_1m[1]))$crps,
+  crps(summary_for_crps$mean_1m_temp_degC[2], c(summary_for_crps$mean_1m[2], summary_for_crps$std_1m[2]))$crps,
+  crps(summary_for_crps$mean_1m_temp_degC[3], c(summary_for_crps$mean_1m[3], summary_for_crps$std_1m[3]))$crps,
+  crps(summary_for_crps$mean_1m_temp_degC[4], c(summary_for_crps$mean_1m[4], summary_for_crps$std_1m[4]))$crps,
+  crps(summary_for_crps$mean_1m_temp_degC[5], c(summary_for_crps$mean_1m[5], summary_for_crps$std_1m[5]))$crps,
+  crps(summary_for_crps$mean_1m_temp_degC[6], c(summary_for_crps$mean_1m[6], summary_for_crps$std_1m[6]))$crps,
+  crps(summary_for_crps$mean_1m_temp_degC[7], c(summary_for_crps$mean_1m[7], summary_for_crps$std_1m[7]))$crps
+)/7
+
+
+```
+
+```{r}
+
+summary_for_crps <- forecast_09112022_7 %>% 
+  summarize(mean_1m = mean(mean_1m_temp_degC),
+            std_1m = sd(mean_1m_temp_degC),
+            mean_int = mean(mean_0_5m_temp_degC),
+            std_int = sd(mean_0_5m_temp_degC),
+            .by = date) %>% 
+  left_join(., obs) 
+
+sum(
+  crps(summary_for_crps$mean_1m_temp_degC[1], c(summary_for_crps$mean_1m[1], summary_for_crps$std_1m[1]))$crps,
+  crps(summary_for_crps$mean_1m_temp_degC[2], c(summary_for_crps$mean_1m[2], summary_for_crps$std_1m[2]))$crps,
+  crps(summary_for_crps$mean_1m_temp_degC[3], c(summary_for_crps$mean_1m[3], summary_for_crps$std_1m[3]))$crps,
+  crps(summary_for_crps$mean_1m_temp_degC[4], c(summary_for_crps$mean_1m[4], summary_for_crps$std_1m[4]))$crps,
+  crps(summary_for_crps$mean_1m_temp_degC[5], c(summary_for_crps$mean_1m[5], summary_for_crps$std_1m[5]))$crps,
+  crps(summary_for_crps$mean_1m_temp_degC[6], c(summary_for_crps$mean_1m[6], summary_for_crps$std_1m[6]))$crps,
+  crps(summary_for_crps$mean_1m_temp_degC[7], c(summary_for_crps$mean_1m[7], summary_for_crps$std_1m[7]))$crps
+)/7
+
+
+```
+
+
+
