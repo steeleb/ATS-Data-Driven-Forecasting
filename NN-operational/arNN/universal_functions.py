@@ -3,7 +3,6 @@ import numpy as np
 import tensorflow as tf
 from sklearn.metrics import mean_squared_error, mean_absolute_error, mean_absolute_percentage_error
 import os
-from tensorflow import keras
 
 def save_to_pickle(obj, filepath):
     """
@@ -19,19 +18,6 @@ def save_to_pickle(obj, filepath):
     with open(filepath, 'wb') as f:
         pickle.dump(obj, f)
 
-def save_keras_model(model, filepath):
-    """
-    Save a Keras model to a file.
-    
-    Parameters:
-    model (keras.Model): The Keras model to be saved.
-    filepath (str): The filepath to save the model to.
-    
-    Returns:
-    None
-    """
-    model.save(filepath)
-
 def load_pickle_file(file_name, file_path):
     """
     Load a pickle file from a given file path and file name.
@@ -46,43 +32,6 @@ def load_pickle_file(file_name, file_path):
     with open(os.path.join(file_path, file_name), 'rb') as f:
         return pickle.load(f)
 
-def weighted_mse_loss(y_true, y_pred):
-    weights = tf.constant([0.6, 0.4])
-    squared_difference = tf.square(y_true - y_pred)
-    weighted_squared_difference = squared_difference * weights
-    return tf.reduce_mean(weighted_squared_difference)
-
-def weighted_mae_loss(y_true, y_pred):
-    weights = tf.constant([0.6, 0.4])
-    abs_difference = tf.abs(y_true - y_pred)
-    weighted_abs_difference = abs_difference * weights
-    return tf.reduce_mean(weighted_abs_difference)
-
-def load_keras_model_custom_loss(file_name, file_path):
-    """
-    Load a Keras model from a file with a custom loss function.
-    
-    Parameters:
-    file_path (str): The path to the directory containing the pikerasckle file.
-    file_name (str): The name of the keras file.
-
-    Returns:
-    keras.Model: The Keras model loaded from the file.
-    """
-    return keras.models.load_model(os.path.join(file_path, file_name), custom_objects={"weighted_mse_loss": weighted_mse_loss})
-
-def load_keras_model_wtd_mae_loss(file_name, file_path):
-    """
-    Load a Keras model from a file with a custom loss function.
-    
-    Parameters:
-    file_path (str): The path to the directory containing the pikerasckle file.
-    file_name (str): The name of the keras file.
-
-    Returns:
-    keras.Model: The Keras model loaded from the file.
-    """
-    return keras.models.load_model(os.path.join(file_path, file_name), custom_objects={"weighted_mae_loss": weighted_mae_loss})
 
 def get_features_labels(train_dfs, val_dfs):
   # grab the values we want to predict

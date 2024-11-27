@@ -1,7 +1,7 @@
 ---
 title: "03_test_set_preprocess_baseline"
 author: "ROSSyndicate"
-date: "2024-10-15"
+date: "2024-11-26"
 output: html_document
 ---
 
@@ -28,6 +28,7 @@ import numpy as np
 from datetime import date
 import pickle
 from sklearn.metrics import mean_squared_error, mean_absolute_error, mean_absolute_percentage_error
+from scipy.stats import skew, boxcox
 
 ```
 
@@ -37,66 +38,99 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, mean_absolu
 file_path = os.path.expanduser("/Users/steeleb/Documents/GitHub/NASA-NW/data/NN_train_val_test/SMR_forecast/")
 
 # import test data
-t2022_fn = os.path.join(file_path, "test2022_v2024-10-28.csv")
+t2022_fn = os.path.join(file_path, "test_3h_2022_v2024-10-28.csv")
 t2022 = pd.read_csv(t2022_fn, sep=',')
-t2023_fn = os.path.join(file_path, "test2023_v2024-10-28.csv")
+t2023_fn = os.path.join(file_path, "test_3h_2023_v2024-10-28.csv")
 t2023 = pd.read_csv(t2023_fn, sep=',')
-
-test = pd.concat([t2022, t2023])
 ```
 
-## Pre-process test set
+## Pre-process test 
+
+### Transform as needed
 
 We need to transform the data in the test set like we did in the training set.
+To do this, we'll load in the two data handling sets, one each for each year.
 
 ```{python}
-test_no_temp = test.drop(test.filter(like = 'noon_air_temp').columns, axis = 1)
-temp_only = test.filter(like = 'noon_air_temp')
-temp_only = np.square(temp_only)
+h2022_fn = os.path.join(file_path, "data_handle_tracking_t2022_v2024-11-25.csv")
+handle_2022 = pd.read_csv(h2022_fn, sep=',', index_col=0)
+handle_2022 = handle_2022.set_index("column")
 
-test2 = pd.concat([test_no_temp, temp_only], axis = 1)
+h2023_fn = os.path.join(file_path, "data_handle_tracking_t2023_v2024-10-28.csv")
+handle_2023 = pd.read_csv(h2023_fn, sep=',', index_col=0)
+handle_2023 = handle_2023.set_index("column")
+```
 
+Let's create a function to transform as needed:
 
-test_no_wind = test2.drop(test2.filter(like = 'noon_ave_wind').columns, axis = 1)
-wind_only = test2.filter(like = 'noon_ave_wind')
-wind_only = np.log(wind_only)
-
-test3 = pd.concat([test_no_wind, wind_only], axis = 1)
-
-
-test_no_sr = test3.drop(test3.filter(like = 'noon_solar').columns, axis = 1)
-sr_only = test3.filter(like = 'noon_solar')
-sr_only = np.square(sr_only)
-
-test4 = pd.concat([test_no_sr, sr_only], axis = 1)
-
-
-test_no_minchip = test4.drop(test4.filter(like = 'min_chip').columns, axis = 1)
-min_chip = test4.filter(like='min_chip')
-min_chip = np.abs(min_chip)
-min_chip += 0.1
-min_chip = np.sqrt(min_chip)
-
-test5 = pd.concat([test_no_minchip, min_chip], axis = 1)
-
-nf = test5.filter(like='NF')
-test_no_NF = test5.drop(nf.columns, axis = 1)
-nf = np.log(nf)
-
-test6 = pd.concat([test_no_NF, nf], axis = 1)
+```{python}
+def transform_column(df, col_name, shift, transform):
+  print(f'transforming {col_name}')
+  if transform == 'box-cox':
+    df[col_name] = (df[col_name]**shift -1)/shift
+  elif np.isnan(shift):
+    if transform == "square":
+      df[col_name] = np.square(df[col_name])
+    elif transform == "log":
+      df[col_name] = np.log(df[col_name])
+    elif transform == "square-root":
+      df[col_name] = np.sqrt(df[col_name])
+    else:
+      print(f'transformation not recognized for {col_name}')
+  else:
+    if transform == "square":
+      df[col_name] = df[col_name] + shift
+      df[col_name] = np.square(df[col_name])
+    elif transform == "log":
+      df[col_name] = df[col_name] + shift
+      df[col_name] = np.log(df[col_name])
+    elif transform == "square-root":
+      df[col_name] = df[col_name] + shift
+      df[col_name] = np.sqrt(df[col_name])
+    else:
+      print(f'transformation not recognized for {col_name}')
+  print(f'skew after transformation: {skew(df[col_name])}')
+  return df[col_name]
 
 ```
+
+Great, now let's apply it. In order for this to work well, we need to copy the
+original file, then subset that to the columns that are listed as indices in the
+data handling file.
+
+```{python}
+t2022_for_trans = t2022.copy().filter(cols_for_transform)
+t2022_not_trans = t2022.copy().drop(cols_for_transform, axis = 1)
+t2022_for_trans = t2022_for_trans.apply(lambda col: transform_column(t2022_for_trans, col.name, handle_2022.loc[col.name, 'shift'], handle_2022.loc[col.name, 'transform']))
+
+t2022_transformed = pd.concat([t2022_not_trans, t2022_for_trans], axis = 1)
+t2022_transformed = t2022_transformed[t2022.columns]
+```
+
+Most values seem fine except wind. Just fyi.
+
+```{python}
+t2023_for_trans = t2023.copy().filter(cols_for_transform)
+t2023_not_trans = t2023.copy().drop(cols_for_transform, axis = 1)
+t2023_for_trans = t2023_for_trans.apply(lambda col: transform_column(t2023_for_trans, col.name, handle_2023.loc[col.name, 'shift'], handle_2023.loc[col.name, 'transform']))
+
+t2023_transformed = pd.concat([t2023_not_trans, t2023_for_trans], axis = 1)
+t2023_transformed = t2023_transformed[t2023.columns]
+```
+
+Some of the temp data are still skewed, and wind nearly as well.
+
+### Standardize 
 
 And then we need to standardize using the values from train/test, but we need
 to split them back into the t2022 and t2023 first (since they have different
 standardizations).
 
 ```{python}
-test6['date'] = pd.to_datetime(test6['date'], utc = True)
-t2022_trans = test6.loc[test6['date'].between('2022-01-01', '2023-01-01')]
-t2023_trans = test6.loc[test6['date'].between('2023-01-01', '2024-01-01')]
+t2022_transformed['date'] = pd.to_datetime(t2022_transformed['date'], utc = True)
+t2023_transformed['date'] = pd.to_datetime(t2023_transformed['date'], utc = True)
 
-mean_std_t2022 = pd.read_csv(os.path.join(file_path, "mean_std_train_val_t2022_v2024-10-28.csv"), sep=',')
+mean_std_t2022 = pd.read_csv(os.path.join(file_path, "mean_std_train_val_t2022_v2024-11-25.csv"), sep=',')
 mean_std_t2023 = pd.read_csv(os.path.join(file_path, "mean_std_train_val_t2023_v2024-10-28.csv"), sep=',')
 
 # set index to first column, renamed 'feature'
@@ -105,7 +139,7 @@ mean_std_t2023 = mean_std_t2023.rename(columns={"Unnamed: 0": "feature"}).set_in
 ```
 
 Now, we'll standardize the data so that all the values are between -1 and 1 
-according to the mean and standard devaition of the test/train set
+according to the mean and standard deviation of the test/train set
 
 ```{python}
 def standardize_column(df, col_name, mean, std):
@@ -113,24 +147,26 @@ def standardize_column(df, col_name, mean, std):
     return (col - mean) / std
 
 # drop date columns (which aren't standardized or fed into the model)
-t2022_s = t2022_trans.drop(columns = 'date')
-t2023_s = t2023_trans.drop(columns = 'date')
+t2022_std = t2022_transformed.drop(columns = 'date')
+t2023_std = t2023_transformed.drop(columns = 'date')
 
 # apply standardize_column function to all columns of df
-t2022_standard = t2022_s.apply(lambda col: standardize_column(t2022_s, col.name, mean_std_t2022.loc[col.name, 'mean'], mean_std_t2022.loc[col.name, 'std']))
-t2023_standard = t2023_s.apply(lambda col: standardize_column(t2023_s, col.name, mean_std_t2023.loc[col.name, 'mean'], mean_std_t2023.loc[col.name, 'std']))
+t2022_standard = t2022_std.apply(lambda col: standardize_column(t2022_std, col.name, mean_std_t2022.loc[col.name, 'mean'], mean_std_t2022.loc[col.name, 'std']))
+t2023_standard = t2023_std.apply(lambda col: standardize_column(t2023_std, col.name, mean_std_t2023.loc[col.name, 'mean'], mean_std_t2023.loc[col.name, 'std']))
 
-t2022_standard = pd.concat([t2022['date'], t2022_standard], axis = 1)
-t2023_standard = pd.concat([t2023['date'], t2023_standard], axis = 1)
+t2022_standard = pd.concat([t2022_transformed['date'], t2022_standard], axis = 1)
+t2022_standard = t2022_standard[t2022.columns]
+t2023_standard = pd.concat([t2023_transformed['date'], t2023_standard], axis = 1)
+t2023_standard = t2023_standard[t2023.columns]
 ```
 
 And now, save these files:
 ```{python}
 # save the file
-fn = os.path.join(file_path, "t2022_standardized_v2024-10-28.csv")
+fn = os.path.join(file_path, "t2022_standardized_v2024-11-25.csv")
 t2022_standard.to_csv(fn, index=False)
 
-fn = os.path.join(file_path, ("t2023_standardized_v2024-10-28.csv"))
+fn = os.path.join(file_path, ("t2023_standardized_v2024-11-25.csv"))
 t2023_standard.to_csv(fn, index = False)
 ```
 
@@ -141,27 +177,7 @@ For this model, we just want to make sure that the performance is better than
 set, comparing yesterday's temp to todays temp, where we treat yesterday's temp 
 as y-hat.
 
-### for testing 2022
-
-We also need to limit the baseline to the dates where NW is regulated (Jun 1-Sep 11)
-
 ```{python}
-reg_start_t2022 = '2022-07-01'
-reg_end_t2022 = '2022-09-11'
-t2022_s = t2022.loc[t2022['date'].between(reg_start_t2022, reg_end_t2022, inclusive = 'both')]
-
-reg_start_t2023 = '2023-07-01'
-reg_end_t2023 = '2023-09-11'
-t2023_s = t2023.loc[t2023['date'].between(reg_start_t2023, reg_end_t2023, inclusive = 'both')]
-
-```
-
-Calculate baseline for test year 2022:
-
-```{python}
-baseline_t2022_1m = t2022.filter(like = "mean_1m_temp_degC")
-baseline_t2022_05m = t2022.filter(like = "mean_0_5m_temp_degC")
-
 def print_error_metrics(error_metric_name, y, y_hat):
     t_mse = mean_squared_error(y, y_hat)
     t_mae = mean_absolute_error(y, y_hat)
@@ -172,6 +188,29 @@ def print_error_metrics(error_metric_name, y, y_hat):
     print("MAPE for ", error_metric_name, ": ", t_mape)
     print(' ')
 
+```
+
+### 2022
+
+We also need to limit the baseline to the dates where NW is regulated (Jun 1-Sep 11)
+
+```{python}
+reg_start_t2022 = '2022-07-01'
+reg_end_t2022 = '2022-09-11'
+t2022_reg = t2022.loc[t2022['date'].between(reg_start_t2022, reg_end_t2022, inclusive = 'both')]
+
+reg_start_t2023 = '2023-07-01'
+reg_end_t2023 = '2023-09-11'
+t2023_reg = t2023.loc[t2023['date'].between(reg_start_t2023, reg_end_t2023, inclusive = 'both')]
+
+```
+
+
+Calculate baseline for test year 2022, irrelevant of regulation period
+
+```{python}
+baseline_t2022_1m = t2022.filter(like = "mean_1m_temp_degC")
+baseline_t2022_05m = t2022.filter(like = "mean_0_5m_temp_degC")
 
 print_error_metrics("1m baseline", 
                     baseline_t2022_1m['mean_1m_temp_degC'], 
@@ -191,6 +230,33 @@ Mean Squared Error for 0-5m baseline : 0.12
 Mean Absolute Error for 0-5m baseline : 0.27
 MAPE for 0-5m: 2.09 %
 
+And for regulation period only:
+
+```{python}
+baseline_t2022_1m_r = t2022_reg.filter(like = "mean_1m_temp_degC")
+baseline_t2022_05m_r = t2022_reg.filter(like = "mean_0_5m_temp_degC")
+
+print_error_metrics("1m baseline during reg period", 
+                    baseline_t2022_1m_r['mean_1m_temp_degC'], 
+                    baseline_t2022_1m_r['mean_1m_temp_degC_m1'])
+print_error_metrics("0-5m baseline during reg period", 
+                    baseline_t2022_05m_r['mean_0_5m_temp_degC'], 
+                    baseline_t2022_05m_r['mean_0_5m_temp_degC_m1'])
+
+```
+
+1m baseline
+Mean Squared Error for 1m baseline : 0.26
+Mean Absolute Error for 1m baseline : 0.41
+MAPE for 1m: 2.45 %
+
+0-5m baseline
+Mean Squared Error for 0-5m baseline : 0.12
+Mean Absolute Error for 0-5m baseline : 0.28
+MAPE for 0-5m: 2.00 %
+
+### 2023
+
 Calculate baseline for test year 2023:
 
 ```{python}
@@ -209,10 +275,34 @@ print_error_metrics("0-5m baseline",
 1m baseline
 Mean Squared Error for 1m baseline : 0.27
 Mean Absolute Error for 1m baseline : 0.41
-MAPE: 2.22 %
+MAPE: 2.98 %
 
 0-5m baseline
 Mean Squared Error for 0-5m baseline : 0.12
 Mean Absolute Error for 0-5m baseline : 0.27
 MAPE: 2.22 %
- 
+
+And during regulatory period:
+
+```{python}
+baseline_t2023_1m_r = t2023_reg.filter(like="mean_1m_temp_degC")
+baseline_t2023_05m_r = t2023_reg.filter(like ="mean_0_5m_temp_degC")
+
+print_error_metrics("1m baseline", 
+                    baseline_t2023_1m_r['mean_1m_temp_degC'], 
+                    baseline_t2023_1m_r['mean_1m_temp_degC_m1'])
+print_error_metrics("0-5m baseline", 
+                    baseline_t2023_05m_r['mean_0_5m_temp_degC'], 
+                    baseline_t2023_05m_r['mean_0_5m_temp_degC_m1'])
+
+```
+
+1m baseline
+Mean Squared Error for 1m baseline : 0.24
+Mean Absolute Error for 1m baseline : 0.38
+MAPE: 2.28 %
+
+0-5m baseline
+Mean Squared Error for 0-5m baseline : 0.11
+Mean Absolute Error for 0-5m baseline : 0.26
+MAPE: 1.79 %
