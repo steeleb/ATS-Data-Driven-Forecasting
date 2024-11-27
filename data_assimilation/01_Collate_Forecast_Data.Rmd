@@ -1,0 +1,86 @@
+---
+title: "01-Collate Forecast Data"
+author: "ROSSyndicate"
+date: "2024-11-22"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+```
+
+# Purpose
+
+This markdown document collates 3h GEFS 0.25 data from our Herbie download.
+
+For our forecasts, we need to read in all the files, collate them, and then 
+just grab the 'right now' and the 6h to compare sw/lw radiation.
+
+```{r}
+forecast_files <- list.files("data/herbie_extraction/GEFS_2022/", full.names = T)
+
+forecast_2022 <- map(forecast_files, read_csv) %>% bind_rows()
+
+control_files <- list.files("data/herbie_extraction/debias/", full.names = T)
+
+control_data <- map(control_files, read_csv) %>% bind_rows()
+
+```
+
+Now, to SI:
+- t2m is in deg K, needs to go to C
+- u10,  v10 need to be transformed into wind speed
+
+```{r}
+forecast_2022_si <- forecast_2022 %>% 
+  mutate(temp_degC = (t2m - 273.15),
+         wind_mps = sqrt(u10^2 + v10^2), #sqrt(mer^2 + zon^2)
+         solar_rad_wpm2 = sdswrf,
+         rh = r2) %>%  
+  select(-c(t2m, u10, v10, sdswrf, r2)) 
+
+control_si <- control_data %>% 
+    mutate(temp_degC = (t2m - 273.15),
+         wind_mps = sqrt(u10^2 + v10^2), #sqrt(mer^2 + zon^2)
+         solar_rad_wpm2 = sdswrf,
+         rh = r2) %>%  
+  select(-c(t2m, u10, v10, sdswrf, r2)) 
+
+```
+
+And drop a few more columns that we don't need to track:
+
+```{r}
+forecast_2022_si <- forecast_2022_si %>% 
+  select(-c(heightAboveGround, gribfile_projection, surface, `2022-06-01`)) %>% 
+  filter(!is.na(time))
+
+control_si <- control_si %>% 
+  select(-c(heightAboveGround, gribfile_projection, surface, `2020-06-01`)) %>% 
+  filter(!is.na(time))
+
+```
+
+# Creating a timeseries of the forecast...
+
+temp, rh, wind is the forecast at valid time
+tmin, tmax is over the 3h period since previous forecast
+solar rad is the AVERAGE over 3h since previous forecast
+
+## at forecast
+
+for temp, rh, wind, we can just make some assumptions that there is a linear 
+relationship between the previous and the valid. Let's just grab one example and
+see if we can do this either linearly or using spline 
+
+```{r}
+int_test <- forecast_2022_si %>% 
+  filter(time == ymd_hms("2022-06-02 06:00:00"), number == 0)
+
+ggplot(int_test, aes(x = valid_time, y = temp_degC)) + 
+  geom_point() +
+  geom_line() +
+  theme_bw() 
+```
+
+

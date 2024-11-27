@@ -20,7 +20,7 @@ def get_data(df, point):
     return extracted.to_dataframe()
 
 def get_gefs025(date, member, fxx, point):
-    dt = str(date + " 06:00") # 6UTC is approximately midnight here
+    dt = date 
     H = Herbie(dt, model='gefs', product="atmos.25", member = member, fxx = fxx, verbose=False)
     ds = H.xarray("[U|V]GRD|TMP|TMIN|TMAX|RH|DSWRF")
     result = [get_data(df, point) for df in ds]
@@ -37,12 +37,13 @@ def get_gefs025(date, member, fxx, point):
 def get_gefs025_control_for_date(date, member_list, fxx_list, point):
     print(f"Beginning extraction of forecasts for {date}")
     results = []
+    fn_date = str(date).replace(" ", "_").replace(":", "-")
     try:
         for member, fxx in itertools.product(member_list, fxx_list):
             result = get_gefs025(date, member, fxx, point)
             results.append(result)
         final_result = pd.concat(results, keys=[(m, f) for m, f in itertools.product(member_list, fxx_list)])
-        output_path = f"/Users/steeleb/Documents/GitHub/ATS-Data-Driven-Forecasting/data/herbie_extraction/debias/GEFS_p25_control_{date}.csv"
+        output_path = f"/Users/steeleb/Documents/GitHub/ATS-Data-Driven-Forecasting/data/herbie_extraction/debias/GEFS_p25_control_{fn_date}.csv"
         final_result.to_csv(output_path, index=False)
         print(f"Successfully saved data for {date}")
         return None
@@ -61,15 +62,15 @@ def process_all_dates(date_sequence, fxx_list, point):
             f.write(f"{date}\n")
 
 if __name__ == '__main__':
-    DATESEQUENCE = [date.strftime('%Y-%m-%d') for date in pd.date_range("2020-06-01", "2020-10-15")]
     fxx_list = list(np.arange(0, 4, 3, dtype="object"))
+    DATESEQUENCE = pd.date_range("2020-06-01", "2020-10-15", freq="6H")
     process_all_dates(DATESEQUENCE, fxx_list, point)
-    DATESEQUENCE = [date.strftime('%Y-%m-%d') for date in pd.date_range("2021-06-01", "2021-10-15")]
+    DATESEQUENCE = pd.date_range("2021-06-01", "2021-10-15", freq="6H")
     process_all_dates(DATESEQUENCE, fxx_list, point)
-    DATESEQUENCE = [date.strftime('%Y-%m-%d') for date in pd.date_range("2022-06-01", "2022-10-15")]
+    DATESEQUENCE = pd.date_range("2022-06-01", "2022-10-15", freq="6H")
     process_all_dates(DATESEQUENCE, fxx_list, point)
-    DATESEQUENCE = [date.strftime('%Y-%m-%d') for date in pd.date_range("2023-06-01", "2023-10-15")]
+    DATESEQUENCE = pd.date_range("2023-06-01", "2023-10-15", freq="6H")
     process_all_dates(DATESEQUENCE, fxx_list, point)
-    DATESEQUENCE = [date.strftime('%Y-%m-%d') for date in pd.date_range("2024-06-01", "2024-10-15")]
+    DATESEQUENCE = pd.date_range("2024-06-01", "2024-10-15", freq="6H")
     process_all_dates(DATESEQUENCE, fxx_list, point)
 
