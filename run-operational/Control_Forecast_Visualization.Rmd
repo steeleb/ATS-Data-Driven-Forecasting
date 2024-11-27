@@ -71,7 +71,9 @@ plot_forecast <- function(forecast, date_of_forecast) {
 
 ```{r}
 for (d in dates) {
-  forecast_data <- control_forecasts %>% filter(forecast_date == d)
+  forecast_data <- control_forecasts %>% 
+    filter(forecast_date == d) %>% 
+    mutate(valid_date = date(valid_date))
   plt <- plot_forecast(forecast_data, d)
   ggsave(filename = paste0("run-operational/forecast_plots/control/seven_day_forecast_", d, ".png"), 
          plot = plt, device = "png", width = 8, height = 4, units = "in", dpi = 300)
@@ -83,7 +85,9 @@ for (d in dates) {
 forecast_mean <- control_forecasts %>% 
   summarize(mean_1m = mean(mean_1m_temp_degC),
             mean_int = mean(mean_0_5m_temp_degC),
-            .by = c("forecast_date", "valid_date"))
+            .by = c("forecast_date", "valid_date")) %>% 
+  mutate(valid_date = date(valid_date),
+         forecast_date = date(forecast_date))
 obs %>% 
   filter(year(date) == 2022) %>% 
   ggplot(., aes(x = date, y = mean_1m_temp_degC)) +
@@ -95,21 +99,23 @@ obs %>%
 
 ```{r}
 forecast_min_max <- control_forecasts %>% 
-  make_forecast_summary() 
+  make_forecast_summary() %>% 
+  mutate(valid_date = date(valid_date),
+         forecast_date = date(forecast_date))
 obs_2022 <- obs %>% 
   filter(year(date) == 2022)
 
 ggplot() +
   geom_point(data = obs_2022, aes(x = date, y = mean_1m_temp_degC)) +
-  geom_ribbon(data = forecast_min_max, aes(x = valid_date, ymin = min_1m_temp, ymax = max_1m_temp, fill = forecast_date), alpha = 0.2) +
-  geom_line(data = forecast_mean, aes(x = valid_date, y = mean_1m, color = forecast_date)) +
+  geom_ribbon(data = forecast_min_max, aes(x = valid_date, ymin = min_1m_temp, ymax = max_1m_temp, fill = as.factor(forecast_date)), alpha = 0.2) +
+  geom_line(data = forecast_mean, aes(x = valid_date, y = mean_1m, color = as.factor(forecast_date))) +
   theme_bw() +
   theme(legend.position = "none")
 
 ggplot() +
   geom_point(data = obs_2022, aes(x = date, y = mean_0_5m_temp_degC)) +
-  geom_ribbon(data = forecast_min_max, aes(x = valid_date, ymin = min_0_5m_temp, ymax = max_0_5m_temp, fill = forecast_date), alpha = 0.2) +
-  geom_line(data = forecast_mean, aes(x = valid_date, y = mean_int, color = forecast_date)) +
+  geom_ribbon(data = forecast_min_max, aes(x = valid_date, ymin = min_0_5m_temp, ymax = max_0_5m_temp, fill = as.factor(forecast_date)), alpha = 0.2) +
+  geom_line(data = forecast_mean, aes(x = valid_date, y = mean_int, color = as.factor(forecast_date))) +
   theme_bw() +
   theme(legend.position = "none")
 
