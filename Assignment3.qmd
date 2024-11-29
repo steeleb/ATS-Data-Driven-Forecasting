@@ -1,0 +1,37 @@
+---
+title: "Assignment 3"
+subtitle: "final testing forecasts and insights into sources of predictability/skill"
+author: "B Steele"
+format: #pdf
+editor: visual
+# jupyter: python3
+bibliography: references.bib
+---
+
+[GitHub link](https://github.com/steeleb/ATS-Data-Driven-Forecasting)
+
+# Scientific Motivation and Problem Statement
+
+Water temperature is often an indicator of water quality, as it governs much of the biological activity in freshwater systems. Despite the importance of water quality to determine water-system health, consistent and frequent monitoring of waterbodies (by physically visiting a site) or sensor network deployment to monitor water temperature are both costly endeavors (CITE). Northern Water, the municipal subdistrict that delivers drinking water to approximately 1 million people in northern Colorado and irrigation water for \~600,000 acres of land, has had recurring issues with water clarity in Grand Lake, the deepest natural lake in Colorado. They believe that the clarity issues in Grand Lake are primarily due to algal and diatom growth in Shadow Mountain reservoir which are pushed into Grand when they initiate pumping operations. Clarity in Grand is regulated by Senate Document 80 which dates back to 1937 and the inception of the Colorado Big-Thompson project, however in 2016 stakeholders and operators adopted a system of "goal qualifiers" for Grand. The goal qualifiers are defined through Secchi disc depth measurements (a measure of water clarity), requiring a 3.8-meter Secchi depth average and 2.5-meter Secchi depth daily minimum to be met throughout the July 1 to September 11 regulatory season.  
+
+Water in the Three Lakes System naturally flows from Grand into Shadow Mountain into Granby, but pumping operations reverse that by pumping hypolimnetic water (cold water) from Granby reservoir into Shadow Mountain and then into Grand and into the tunnel to serve the Front Range (@fig-cartoon). Northern suspects there is a biological "sweet spot" for water temperature in Shadow Mountain Reservoir that may reduce algal and diatom growth and therefore mitigate clarity impacts during pumping operations.
+
+The optimal temperature for reducing algal growth is to keep the upper 1m of water less than 15°C and to reduce diatom growth is to keep the average temperature of 0-5m ("integrated depth") greater than 14°C, which is a bit of a "Goldilocks" problem.
+
+The overarching goal is to create a decision support system that forecasts water temperature in Shadow Mountain Reservoir on a daily timestep to a horizon of seven days at two depths (near-surface 0-1 meter, integrated 0-5 meter). since the operations of the pump over the previous seven days are the most influential operations variable from the preliminary model. When opeartionl, we would add an operational "knob" that would alter pumping operations (while maintaining water balance) as a mechanism to mitigate water temperature within the forecast application and attempt to reach the "Goldilocks" range during the regulatory period. Adding that knob is out of scope for this class, so instead, I will focus on reliable 7-day forecasts using an auto-regressive neural network.
+
+# Data-Driven Forecast System
+
+Northern Water has collected extensive data at the Three Lakes System for many years. In 2015, they deployed an instrumented buoy in Shadow Mountain near Chipmunk Lane, the connection between Grand and Shadow Mountain. The data-driven forecast relies on aggregated daily data from the buoy, volume data from inflows (North Fork into Grand Lake, North Inlet into Shadow Mountain), and volume of the interflow between Shadow and Grand (Chipmunk Lane). In addition to these hydrologic data, I use lagged meteorology data from a met station at the southern end of Shadow Mountain, which is gap-filled with NCEI data from a local weather station on the north side of Grand Lake, which I assert are similar enough to be interchangable.
+
+The architecture of the forecast system is a fully-connected neural network comprised of 2 layers of 10 nodes each.
+
+## Results and Skill
+
+-   final testing results, forecast skill (i.e. metrics) and comparisons to baselines
+
+## Discussion of predictability
+
+-   detailed discussion of sources of predictability (this could be for a single forecast, or an overview of the sources of skill for all forecasts) and the approaches you used to gain this insight
+
+-   description of whether you think these sources of predictability make sense
