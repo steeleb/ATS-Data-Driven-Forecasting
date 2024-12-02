@@ -1,0 +1,160 @@
+---
+title: "Control Forecast Visualization"
+author: "ROSSyndicate"
+date: "2024-11-01"
+output: html_document
+---
+
+This script walks through the visualization of one data-driven forecast for our
+control forecast, where the only thing we change in roll out is autoregressive 
+temperature.
+
+```{r}
+library(tidyverse)
+library(feather)
+library(cowplot)
+library(ggthemes)
+
+control_forecast_files <- list.files("run-operational/output/control_reduce/", full.names = T)
+dates <- str_extract(control_forecast_files, "\\d{4}-\\d{2}-\\d{2}")
+control_forecasts <- map2(.x = control_forecast_files,
+                          .y = dates,
+                          .f = ~read_csv(.x) %>% 
+                            mutate(forecast_date = .y)) %>% 
+  bind_rows()
+
+obs <- read_feather("~/Desktop/w_SM_MID_daily_temp.feather")
+```
+
+
+```{r}
+make_forecast_summary <- function(forecast) {
+  forecast %>% 
+    summarise(min_1m_temp = min(mean_1m_temp_degC),
+              max_1m_temp = max(mean_1m_temp_degC),
+              min_0_5m_temp = min(mean_0_5m_temp_degC),
+              max_0_5m_temp = max(mean_0_5m_temp_degC),
+              .by = c("forecast_date", "valid_date"))
+}
+
+filter_obs_data <- function(observed, forecast_date, forecast_length) {
+  observed %>% 
+    filter(between(date, ymd(forecast_date) - days(1), ymd(forecast_date) + days(forecast_length)))
+}
+
+plot_forecast <- function(forecast, date_of_forecast) {
+  
+  summary <- make_forecast_summary(forecast)
+  actual <- filter_obs_data(obs, date_of_forecast, 6)
+  
+  one <- ggplot(summary, aes(x = valid_date)) +
+    geom_ribbon(aes(ymin = min_1m_temp, ymax = max_1m_temp), fill = "grey") +
+    geom_point(data = actual, 
+               aes(x = date, y = mean_1m_temp_degC))  +
+    scale_x_date(date_breaks = "1 day") +
+    theme_bw() +
+    theme(panel.grid.minor = element_blank()) +
+    labs(x = NULL, y = "near-surface water\ntemperature (deg C)")
+  
+  int <- ggplot(summary, aes(x = valid_date)) +
+    geom_ribbon(aes(ymin = min_0_5m_temp, ymax = max_0_5m_temp), fill = "grey") +
+    geom_point(data = actual, 
+               aes(x = date, y = mean_0_5m_temp_degC))  +
+    scale_x_date(date_breaks = "1 day") +
+    theme_bw() +
+    theme(panel.grid.minor = element_blank()) +
+    labs(x = NULL, y = "integrated water\ntemperature (deg C)")
+  
+  plot_grid(one, int, nrow = 2)
+}
+```
+
+```{r}
+for (d in dates) {
+  forecast_data <- control_forecasts %>% 
+    filter(forecast_date == d) %>% 
+    mutate(valid_date = date(valid_date))
+  plt <- plot_forecast(forecast_data, d)
+  ggsave(filename = paste0("run-operational/forecast_plots/control_reduce/seven_day_forecast_", d, ".png"), 
+         plot = plt, device = "png", width = 8, height = 4, units = "in", dpi = 300)
+}
+
+```
+
+```{r}
+forecast_mean <- control_forecasts %>% 
+  summarize(mean_1m = mean(mean_1m_temp_degC),
+            mean_int = mean(mean_0_5m_temp_degC),
+            .by = c("forecast_date", "valid_date")) %>% 
+  mutate(valid_date = date(valid_date),
+         forecast_date = date(forecast_date))
+obs %>% 
+  filter(year(date) == 2023) %>% 
+  ggplot(., aes(x = date, y = mean_1m_temp_degC)) +
+  geom_point() +
+  geom_line(data = forecast_mean, aes(x = valid_date, y = mean_1m, color = forecast_date)) +
+  theme_bw() +
+  theme(legend.position = "none")
+```
+
+```{r}
+forecast_min_max <- control_forecasts %>% 
+  make_forecast_summary() %>% 
+  mutate(valid_date = date(valid_date),
+         forecast_date = date(forecast_date))
+obs_2023 <- obs %>% 
+  filter(between(date, ymd('2023-06-01'), ymd('2023-10-01')))
+
+ggplot() +
+  geom_point(data = obs_2023, aes(x = date, y = mean_1m_temp_degC)) +
+  geom_ribbon(data = forecast_min_max, aes(x = valid_date, ymin = min_1m_temp, ymax = max_1m_temp, fill = as.factor(forecast_date)), alpha = 0.2) +
+  geom_line(data = forecast_mean, aes(x = valid_date, y = mean_1m, color = as.factor(forecast_date))) +
+  labs(y = "water temperature 0-1 meters °C", x = NULL) +
+  theme_bw() +
+  theme(legend.position = "none")
+
+ggplot() +
+  geom_point(data = obs_2023, aes(x = date, y = mean_0_5m_temp_degC)) +
+  geom_ribbon(data = forecast_min_max, aes(x = valid_date, ymin = min_0_5m_temp, ymax = max_0_5m_temp, fill = as.factor(forecast_date)), alpha = 0.2) +
+  geom_line(data = forecast_mean, aes(x = valid_date, y = mean_int, color = as.factor(forecast_date))) +
+  labs(y = "water temperature 0-5 meters °C", x = NULL) +
+  theme_bw() +
+  theme(legend.position = "none")
+
+```
+
+
+## Calculate CRPS and visualize
+
+```{r}
+library(verification)
+
+summary_for_crps <- control_forecasts %>% 
+  summarize(mean_1m = mean(mean_1m_temp_degC),
+            std_1m = sd(mean_1m_temp_degC),
+            mean_int = mean(mean_0_5m_temp_degC),
+            std_int = sd(mean_0_5m_temp_degC),
+            .by = c(valid_date, forecast_date)) %>% 
+  mutate(forecast_date = ymd(forecast_date)) %>% 
+  left_join(., obs_2023 %>% rename(forecast_date = date)) 
+
+
+summary_for_crps <- summary_for_crps %>% 
+  rowwise() %>% 
+  mutate(crps_1m = crps(mean_1m_temp_degC, c(mean_1m, std_1m))$crps,
+         crps_05m = crps(mean_0_5m_temp_degC, c(mean_int, std_int))$crps)
+
+ggplot(summary_for_crps) +
+  geom_line(aes(x = valid_date, y = crps_1m, color = as.factor(forecast_date))) +
+  theme_bw() +
+  labs(x = NULL, y = "CRPS 0-1 meter") +
+  theme(legend.position = 'none')
+
+ggplot(summary_for_crps) +
+  geom_line(aes(x = valid_date, y = crps_05m, color = as.factor(forecast_date))) +
+  theme_bw() +
+  labs(x = NULL, y = "CRPS 0-5 meter") +
+  theme(legend.position = 'none')
+
+```
+
