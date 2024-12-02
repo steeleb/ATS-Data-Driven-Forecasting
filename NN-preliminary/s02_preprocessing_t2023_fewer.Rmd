@@ -1,0 +1,674 @@
+
+# Purpose
+
+This script pre-processes the training and validation data for forecasting water 
+temperature in Shadow Mountain Reservoir and saves column means/standard deviations
+used to pre-process so we can apply to testing data, too.
+
+# Setup environment
+
+You need to be in a fresh session for this to work properly.
+
+```{r}
+source('pySetup.R')
+```
+
+
+```{python}
+# import modules
+import os
+import sys
+import pandas as pd
+import numpy as np
+from datetime import date
+import datetime as dt
+import pickle
+from scipy.stats import skew, boxcox
+
+# store a date for versioning
+standardize_version = '2024-11-29'
+
+```
+
+# Load files!
+
+```{python}
+file_path = os.path.expanduser("/Users/steeleb/OneDrive - Colostate/NASA-Northern/data/NN_train_val_test/SMR_forecast/met_summary/")
+
+# list the files and get the set that use the test as 2023:
+files = pd.Series(os.listdir(file_path))
+files = files[files.str.contains('t2023')]
+# we just care about the train/val set right now
+tv = files[files.str.contains('trainval_3h_summary')]
+idx = tv.index
+
+# import training data
+tv_fn = os.path.join(file_path, tv[idx[0]])
+with open(tv_fn) as f:
+    tv = pd.read_csv(f, sep=',')
+
+```
+
+
+# Transform as needed
+
+We'll look for skewed data and transform before we standardize. We should make
+decisions about transforming (and standardizing) based on non-lagged data, and
+then apply those decisions across the lagged data.
+
+If scikit.stats.skew() |value| is below 0.5, we won't transform. If it's above,
+we will. Generally speaking, positive skew is handled with a log transform and 
+positive skew is handled with a square transform. Alternative simplistic transformations
+are always attempte to get skew < |0.5| before trying more aggressive transforms
+like Box-Cox.
+
+We'll also track any shifts to the data prior to transformations (as well as the
+transformations) to more easily apply later.
+
+```{python}
+handle_tracking = pd.DataFrame(columns=['column', 'shift', 'transform'])
+```
+
+And we'll also save a copy of the tv set into a new dataframe called 'tv_trans'
+so we don't overwrite data as we go...
+
+```{python}
+tv_trans = tv.copy()
+```
+
+Generally speaking, we just want to shift-transform-standardized the un-lagged 
+data, and apply the same transformation/standardization to the lagged data. 
+
+### Water Temperature:
+
+```{python}
+temp = [col for col in tv_trans.columns if "temp_degC" in col and not "_m" in col]
+
+for idx, c in enumerate(temp):
+  print(c)
+  print(skew(tv_trans[c]))
+
+```
+
+We transformed the 1m data for 2022, so let's do it here too. Just need to transform 1m
+
+```{python}
+# make sure there ar no negatives
+print(f'minimum value: {np.min(tv_trans["mean_1m_temp_degC"])}')
+# try a square transformation for the 1m data
+print(f'skew after square transform: {skew(np.square(tv_trans["mean_1m_temp_degC"]))}')
+```
+
+That'll do it. Because there are no negative values, we can just apply the 
+transform to all columns containing the string 1m.
+
+```{python}
+temp_trans = [col for col in tv_trans.columns if "1m" in col]
+
+for idx, c in enumerate(temp_trans):
+  print(f'transforming {c}')
+  handle_tracking = (pd.concat([handle_tracking, 
+    pd.DataFrame({'column': [c], 
+                  'shift': float('nan'),
+                  'transform': 'square'})], 
+    ignore_index=True))
+  tv_trans[c] = np.square(tv_trans[c])
+  print(f'skew after transformation: {skew(tv_trans[c])}')
+
+```
+
+
+### Air Temperature:
+
+Don't grab the offsets.
+
+```{python}
+air_temp = [col for col in tv_trans.columns if "air_temp" in col and not col.split("_m")[-1].isdigit()]
+
+for idx, c in enumerate(air_temp):
+  print(c)
+  print(skew(tv_trans[c]))
+
+```
+
+Need to transform mean 3h, max 3h, max_day.
+We can likely handle this skew with a square function, but because it contains negative
+and positive values, this does some weird stuff, so we need to be sure to make 
+sure all the values are positive before squaring. Because there are also offset/lagged
+values in this case, we'll want to make sure that we apply the same shift to the lagged
+data as the non-lagged data. We'll want there to be a little wiggle room in our 
+shift, so we'll add 10% to the minimum value in order to make room for future data.
+
+```{python}
+air_temp_trans = [col for col in tv_trans.columns if "air_temp" in col and any(substr in col for substr in ['_mean', '_max']) and not col.split("_m")[-1].isdigit()]
+
+for idx, c in enumerate(air_temp_trans):
+  print(f'transforming {c}')
+  min_val = tv_trans[c].min()
+  
+  if min_val < 0:
+    offset_value = np.abs(min_val) + 0.1*np.abs(min_val)
+    offset_value = np.ceil(offset_value)
+    tv_trans[c] = tv_trans[c] + offset_value
+    tv_trans[c] = np.square(tv_trans[c])
+    handle_tracking = pd.concat([handle_tracking, 
+      pd.DataFrame({'column': [c], 
+                    'shift': [offset_value],
+                    'transform': 'square'})], 
+      ignore_index=True)
+    print(f'skew after transform {skew(tv_trans[c])}')
+    # now we need to grab all the lagged variables associated with this one
+    # and apply the same shift
+    lagged_vars = [col for col in tv_trans.columns if c in col and not col == c]
+    for idx_l, l in enumerate(lagged_vars):
+      print(f'transforming {l}')
+      tv_trans[l] = tv_trans[l] + offset_value
+      tv_trans[l] = np.square(tv_trans[l])
+      handle_tracking = pd.concat([handle_tracking, 
+        pd.DataFrame({'column': [l], 
+                      'shift': [offset_value],
+                      'transform': 'square'})], 
+        ignore_index=True)
+      print(f'skew after transform: {skew(tv_trans[l])}')
+  else:
+    tv_trans[c] = np.square(tv_trans[c])
+    handle_tracking = pd.concat([handle_tracking, 
+      pd.DataFrame({'column': [c], 
+                    'shift': float('nan'),
+                    'transform': 'square'})], 
+      ignore_index=True)
+    print(f'skew after transform {skew(tv_trans[c])}')
+    # check for lagged variables
+    lagged_vars = [col for col in tv_trans.columns if c in col and not col == c]
+    for idx_l, l in enumerate(lagged_vars):
+      print(f'transforming {l}')
+      tv_trans[l] = np.square(tv_trans[l])
+      handle_tracking = pd.concat([handle_tracking, 
+        pd.DataFrame({'column': [l], 
+                      'shift': float('nan'),
+                      'transform': 'square'})], 
+        ignore_index=True)
+      print(f'skew after transform {skew(tv_trans[l])}')
+
+
+```
+
+Looks good!
+
+### Wind
+
+Check for skew.
+
+```{python}
+wind_cols = [col for col in tv_trans.columns if "wind" in col and not col.split("_m")[-1].isdigit()]
+
+for idx, c in enumerate(wind_cols):
+  print(c)
+  print(skew(tv_trans[c]))
+
+
+```
+
+Ave and max wind need transformation, just make sure log does well here:
+
+```{python}
+for idx, c in enumerate(wind_cols):
+  print(f'{c} after log transform: ')
+  print(skew(np.log(tv_trans[c]+0.01)))
+
+```
+
+good to go.
+
+```{python}
+wind_cols_trans = [col for col in tv_trans.columns if "wind" in col and "min" not in col and not col.split("_m")[-1].isdigit()]
+
+for idx, c in enumerate(wind_cols_trans):
+  print(f'transforming {c}')
+  tv_trans[c] = np.log(tv_trans[c]+0.01)
+  handle_tracking = pd.concat([handle_tracking, 
+    pd.DataFrame({'column': [c], 
+                  'shift': 0.01,
+                  'transform': 'log'})], 
+    ignore_index=True)
+  print(f'skew after transform {skew(tv_trans[c])}')
+  # now we need to grab all the lagged variables associated with this one
+  # and apply the same shift
+  lagged_vars = [col for col in tv_trans.columns if c in col and not col == c]
+  for idx_l, l in enumerate(lagged_vars):
+    print(f'transforming {l}')
+    tv_trans[l] = np.log(tv_trans[l]+0.01)
+    handle_tracking = pd.concat([handle_tracking, 
+      pd.DataFrame({'column': [l], 
+                    'shift': 0.01,
+                    'transform': 'log'})], 
+      ignore_index=True)
+    print(f'skew after transform: {skew(tv_trans[l])}')
+
+
+```
+
+
+### Solar Radiation
+
+Check for skew.
+
+```{python}
+sr_cols = [col for col in tv_trans.columns if "sol" in col and not col.split("_m")[-1].isdigit()]
+
+for idx, c in enumerate(sr_cols):
+  print(c)
+  print(skew(tv_trans[c]))
+
+
+```
+
+Looks like we need to transform min and max solrad
+
+```{python}
+sr_cols = [col for col in tv_trans.columns if "sol" in col and ("min" in col or "max" in col) and not col.split("_m")[-1].isdigit()]
+
+for idx, c in enumerate(sr_cols):
+  print(c)
+  print(f"square {skew(np.square(tv_trans[c]))}")
+  print(f"log {skew(np.log(tv_trans[c]))}")
+  print(f"sqrt {skew(np.sqrt(tv_trans[c]))}")
+  print(f"cubic sq {skew(np.cbrt(tv_trans[c]))}")
+  print(f"box-cox {skew(boxcox(tv_trans[c])[0])}")
+
+
+```
+
+Woof. okay, square root for min, sqaure for max
+
+```{python}
+sqrt_sr = [col for col in tv_trans.columns if "sol" in col and 'min' in col and not col.split("_m")[-1].isdigit()]
+sq_sr = [col for col in tv_trans.columns if "sol" in col and 'max' in col and not col.split("_m")[-1].isdigit()]
+
+for idx, c in enumerate(sq_sr):
+  print(f'transforming {c}')
+  tv_trans[c] = np.square(tv_trans[c])
+  handle_tracking = pd.concat([handle_tracking, 
+    pd.DataFrame({'column': [c], 
+                  'shift': float('nan'),
+                  'transform': 'square'})], 
+    ignore_index=True)  
+  print(f'skew after transform {skew(tv_trans[c])}')
+  # now we need to grab all the lagged variables associated with this one
+  # and apply the same shift
+  lagged_vars = [col for col in tv_trans.columns if c in col and not col == c]
+  for idx_l, l in enumerate(lagged_vars):
+    print(f'transforming {l}')
+    tv_trans[l] = np.square(tv_trans[l])
+    handle_tracking = pd.concat([handle_tracking, 
+      pd.DataFrame({'column': [l], 
+                    'shift': float('nan'),
+                    'transform': 'square'})], 
+      ignore_index=True)
+    print(f'skew after transform: {skew(tv_trans[l])}')
+
+for idx, c in enumerate(sqrt_sr):
+  print(f'transforming {c}')
+  tv_trans[c] = np.sqrt(tv_trans[c])
+  handle_tracking = pd.concat([handle_tracking, 
+    pd.DataFrame({'column': [c], 
+                  'shift': float('nan'),
+                  'transform': 'square-root'})], 
+    ignore_index=True)  
+  print(f'skew after transform {skew(tv_trans[c])}')
+  # now we need to grab all the lagged variables associated with this one
+  # and apply the same shift
+  lagged_vars = [col for col in tv_trans.columns if c in col and not col == c]
+  for idx_l, l in enumerate(lagged_vars):
+    print(f'transforming {l}')
+    tv_trans[l] = np.sqrt(tv_trans[l])
+    handle_tracking = pd.concat([handle_tracking, 
+      pd.DataFrame({'column': [l], 
+                    'shift': float('nan'),
+                    'transform': 'square-root'})], 
+      ignore_index=True)
+    print(f'skew after transform: {skew(tv_trans[l])}')
+
+```
+
+Great.
+
+### Pump
+
+Check for skew in pump data.
+
+```{python}
+pump = [col for col in tv_trans.columns if "pump" in col and not col.split("_m")[-1].isdigit()]
+
+for idx, c in enumerate(pump):
+  print(c)
+  print(skew(tv_trans[c]))
+
+```
+
+Needs transformation! Trying square root first.
+
+```{python}
+for idx, c in enumerate(pump):
+  print(c)
+  print(f"square root: {skew(np.sqrt(tv_trans[c]))}")
+
+```
+
+Super. We can apply this across all columns.
+
+```{python}
+pump_cols = [col for col in tv_trans.columns if "pump" in col]
+
+for idx, c in enumerate(pump_cols):
+  print(f'transforming {c}')
+  tv_trans[c] = np.sqrt(tv_trans[c])
+  handle_tracking = pd.concat([handle_tracking, 
+    pd.DataFrame({'column': [c], 
+                  'shift': float('nan'),
+                  'transform': 'square-root'})], 
+    ignore_index=True)  
+  print(f'skew after transform {skew(tv_trans[c])}')
+
+
+```
+
+Great.
+
+### Chipmunk
+
+Check for skew.
+
+```{python}
+chip = [col for col in tv_trans.columns if "chip" in col and not col.split("_m")[-1].isdigit()]
+
+for idx, c in enumerate(chip):
+  print(c)
+  print(skew(tv_trans[c]))
+
+```
+
+Okay, this has negatives and positives, so let's deal with this like we did with 
+temp when we go to transform.
+
+```{python}
+chip_trans = [col for col in tv_trans.columns if "chip" in col and not col.split("_m")[-1].isdigit()]
+
+for idx, c in enumerate(chip_trans):
+  print(f'transforming {c}')
+  min_val = tv_trans[c].min()
+  if min_val < 0:
+    offset_value = np.abs(min_val) + 0.1*np.abs(min_val)
+    offset_value = np.ceil(offset_value)
+    tv_trans[c] = tv_trans[c] + offset_value
+    tv_trans[c] = np.square(tv_trans[c])
+    handle_tracking = pd.concat([handle_tracking, 
+      pd.DataFrame({'column': [c], 
+                    'shift': [offset_value],
+                    'transform': 'square'})], 
+      ignore_index=True)
+    print(f'skew after transform {skew(tv_trans[c])}')
+    # now we need to grab all the lagged variables associated with this one
+    # and apply the same shift
+    lagged_vars = [col for col in tv_trans.columns if c in col and not col == c]
+    for idx_l, l in enumerate(lagged_vars):
+      print(f'transforming {l}')
+      tv_trans[l] = tv_trans[l] + offset_value
+      tv_trans[l] = np.square(tv_trans[l])
+      handle_tracking = pd.concat([handle_tracking, 
+        pd.DataFrame({'column': [l], 
+                      'shift': [offset_value],
+                      'transform': 'square'})], 
+        ignore_index=True)
+      print(f'skew after transform: {skew(tv_trans[l])}')
+  else:
+    tv_trans[c] = np.square(tv_trans[c])
+    handle_tracking = pd.concat([handle_tracking, 
+      pd.DataFrame({'column': [c], 
+                    'shift': float('nan'),
+                    'transform': 'square'})], 
+      ignore_index=True)
+    print(f'skew after transform {skew(tv_trans[c])}')
+    # check for lagged variables
+    lagged_vars = [col for col in tv_trans.columns if c in col and not col == c]
+    for idx_l, l in enumerate(lagged_vars):
+      print(f'transforming {l}')
+      tv_trans[l] = np.square(tv_trans[l])
+      handle_tracking = pd.concat([handle_tracking, 
+        pd.DataFrame({'column': [l], 
+                      'shift': float('nan'),
+                      'transform': 'square'})], 
+        ignore_index=True)
+      print(f'skew after transform {skew(tv_trans[l])}')
+
+
+```
+
+
+### North Fork
+
+Check for skew
+
+```{python}
+nf = [col for col in tv_trans.columns if "NF" in col and not col.split("_m")[-1].isdigit()]
+
+for idx, c in enumerate(nf):
+  print(c)
+  print(skew(tv_trans[c]))
+
+```
+
+These definitely need to be transformed! 
+
+```{python}
+for idx, c in enumerate(nf):
+  print(c)
+  print(f"square {skew(np.square(tv_trans[c]))}")
+  print(f"log {skew(np.log(tv_trans[c]))}")
+  print(f"sqrt {skew(np.sqrt(tv_trans[c]))}")
+  print(f"cubic sq {skew(np.cbrt(tv_trans[c]))}")
+  print(f"box-cox {skew(boxcox(tv_trans[c])[0])}")
+
+```
+
+Box-Cox is necessary here - as no other
+simplistic transformations do the trick. We will need to apply the lambda value
+to our test set and also to our lagged variables. 
+
+```{python}
+nf = [col for col in tv_trans.columns if "NF" in col and not col.split("_m")[-1].isdigit()]
+
+for idx, c in enumerate(nf):
+  print(f'transforming {c}')
+  # boxcox stores values in 0 and lambda in 1
+  bc_vals = boxcox(tv_trans[c])
+  tv_trans[c] = bc_vals[0]
+  handle_tracking = pd.concat([handle_tracking, 
+    pd.DataFrame({'column': [c], 
+                  'shift': bc_vals[1],
+                  'transform': 'box-cox'})], 
+    ignore_index=True)  
+  tv_trans[c] = bc_vals[0]
+  print(f'skew after transform {skew(tv_trans[c])}')
+  # now we need to grab all the lagged variables associated with this one
+  # and apply the same shift
+  lagged_vars = [col for col in tv_trans.columns if c in col and not col == c]
+  for idx_l, l in enumerate(lagged_vars):
+    print(f'transforming {l}')
+    tv_trans[l] = (tv_trans[l]**bc_vals[1]-1)/bc_vals[1]
+    handle_tracking = pd.concat([handle_tracking, 
+      pd.DataFrame({'column': [l], 
+                    'shift': bc_vals[1],
+                    'transform': 'box-cox'})], 
+      ignore_index=True)
+    print(f'skew after transform: {skew(tv_trans[l])}')
+
+```
+
+Much better (though it gets worse throughout the offset)
+
+### North Inlet
+
+Check for skew
+
+```{python}
+ni = [col for col in tv_trans.columns if "NI" in col and not col.split("_m")[-1].isdigit()]
+
+for idx, c in enumerate(ni):
+  print(c)
+  print(skew(tv_trans[c]))
+
+```
+
+These definitely need to be transformed! 
+
+```{python}
+for idx, c in enumerate(ni):
+  print(c)
+  print(f"square {skew(np.square(tv_trans[c]))}")
+  print(f"log {skew(np.log(tv_trans[c]))}")
+  print(f"sqrt {skew(np.sqrt(tv_trans[c]))}")
+  print(f"cubic sq {skew(np.cbrt(tv_trans[c]))}")
+  print(f"box-cox {skew(boxcox(tv_trans[c])[0])}")
+
+```
+
+Log will do here. 
+
+```{python}
+ni = [col for col in tv_trans.columns if "NI" in col]
+
+for idx, c in enumerate(ni):
+  print(f'transforming {c}')
+  tv_trans[c] = np.log(tv_trans[c])
+  handle_tracking = pd.concat([handle_tracking, 
+    pd.DataFrame({'column': [c], 
+                  'shift': float('nan'),
+                  'transform': 'log'})], 
+    ignore_index=True)  
+  print(f'skew after transform {skew(tv_trans[c])}')
+
+
+```
+
+
+# Reality check and export
+
+Let's do a quick sanity check to make sure we haven't created any additional columns or rows:
+
+```{python}
+tv.shape
+tv_trans.shape
+```
+
+Great!
+
+We should also make sure the columns are in the original orientation
+
+```{python}
+tv_trans = tv_trans[tv.columns]
+```
+
+Let's save the data handling csv for using on test set.
+
+```{python}
+file_name = "data_handle_tracking_summary_t2023_v" + standardize_version + ".csv"
+# join with file path
+fp = os.path.join(file_path, file_name)
+handle_tracking.to_csv(fp, index=True)
+```
+
+
+# Standardize the data
+
+To standardize the data around 0, we'll use the mean and standard deviation:
+
+```{python}
+def standardize_column(df, col_name):
+    col = df[col_name]
+    return (col - col.mean()) / col.std()
+```
+
+Before we apply, we want to make a copy of this dataframe and drop the dates 
+from it.
+
+```{python}
+tv_short = tv_trans.copy()
+tv_short = tv_short.drop('date', axis = 1)
+```
+
+And now apply the function:
+
+```{python}
+tv_standardized = tv_short.apply(lambda col: standardize_column(tv_short, col.name))
+```
+
+Because we want to be able to apply these same standardizations to the test data, 
+we should grab the mean/std values for each column:
+```{python}
+tv_mean_std = pd.DataFrame({'mean': tv_short.mean(), 'std': tv_short.std()})
+```
+
+Lets save this as a .csv file for later use
+```{python}
+file_name = "mean_std_train_val_summary_t2023_v" + standardize_version + ".csv"
+# join with file path
+fp = os.path.join(file_path, file_name)
+# and save
+tv_mean_std.to_csv(fp, index=True)
+```
+
+# Split Training/Validation
+
+Our training data are now ready to be split into training and validation sets.
+
+```{python}
+training = tv_standardized.copy()
+
+# but let's add lake and date back in.
+training = training.join(tv_trans[['date']])
+```
+
+We'll do timeseries cross validation here.
+
+```{python}
+training['date'] = pd.to_datetime(training['date'])
+training['date'].min()  
+training['date'].max()  
+```
+
+Looks like it's 8 years of data, let's break this by year.
+
+```{python}
+start_year = pd.to_datetime('2014-01-01', utc = True)
+end_year = pd.to_datetime('2023-01-01', utc = True)
+
+years = pd.date_range(start_year, end_year, freq ='1YS', inclusive = 'left')
+
+def save_csv(data, data_name, filepath):
+  file_name = data_name + "_summary_v" + standardize_version +".csv"
+  # join with file path
+  fp = os.path.join(filepath, file_name)
+  # and save
+  data.to_csv(fp, index=False)
+
+training['date'] = pd.to_datetime(training['date'], utc=True)
+
+for y in years:
+  val = training.loc[training['date'].between(pd.to_datetime(y, utc = True), pd.to_datetime((y + pd.tseries.offsets.DateOffset(years = 1)), utc = True))]
+  train = training.merge(val, how='outer', indicator=True).query('_merge=="left_only"').drop('_merge', axis=1)
+  if (val.shape[1] == train.shape[1]) & (val.shape[0] + train.shape[0] == training.shape[0]):
+    val['date'] = pd.to_datetime(val['date'], utc=True)
+    # # subset for only reg duration
+    # start_reg = pd.to_datetime(f"{y.year}-07-01", utc=True)
+    # end_reg = pd.to_datetime(f"{y.year}-09-11", utc=True)
+    # val.loc[(val['date'] >= start_reg) & (val['date'] <= end_reg)]    
+    # save files
+    save_csv(val, 'validation_summary_t2023_' + dt.datetime.strftime(y, '%Y'), file_path)
+    save_csv(train, 'training_summary_t2023_' + dt.datetime.strftime(y, '%Y'), file_path)
+  else: 
+    print('There is an issue with the shape of your training and validation sets')
+
+```
+
+

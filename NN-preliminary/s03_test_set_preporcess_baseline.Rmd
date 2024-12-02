@@ -35,12 +35,12 @@ from scipy.stats import skew, boxcox
 ### Load files!
 
 ```{python}
-file_path = os.path.expanduser("/Users/steeleb/Documents/GitHub/NASA-NW/data/NN_train_val_test/SMR_forecast/met_3h_complete/")
+file_path = os.path.expanduser("/Users/steeleb/Documents/GitHub/NASA-NW/data/NN_train_val_test/SMR_forecast/met_summary/")
 
 # import test data
-t2022_fn = os.path.join(file_path, "test_3h_2022_v2024-10-28.csv")
+t2022_fn = os.path.join(file_path, "test_3h_summary_2022_v2024-10-28.csv")
 t2022 = pd.read_csv(t2022_fn, sep=',')
-t2023_fn = os.path.join(file_path, "test_3h_2023_v2024-10-28.csv")
+t2023_fn = os.path.join(file_path, "test_3h_summary_2023_v2024-10-28.csv")
 t2023 = pd.read_csv(t2023_fn, sep=',')
 ```
 
@@ -52,11 +52,11 @@ We need to transform the data in the test set like we did in the training set.
 To do this, we'll load in the two data handling sets, one each for each year.
 
 ```{python}
-h2022_fn = os.path.join(file_path, "data_handle_tracking_t2022_v2024-12-01.csv")
+h2022_fn = os.path.join(file_path, "data_handle_tracking_summary_t2022_v2024-11-29.csv")
 handle_2022 = pd.read_csv(h2022_fn, sep=',', index_col=0)
 handle_2022 = handle_2022.set_index("column")
 
-h2023_fn = os.path.join(file_path, "data_handle_tracking_t2023_v2024-12-01.csv")
+h2023_fn = os.path.join(file_path, "data_handle_tracking_summary_t2023_v2024-11-29.csv")
 handle_2023 = pd.read_csv(h2023_fn, sep=',', index_col=0)
 handle_2023 = handle_2023.set_index("column")
 ```
@@ -132,8 +132,8 @@ standardizations).
 t2022_transformed['date'] = pd.to_datetime(t2022_transformed['date'], utc = True)
 t2023_transformed['date'] = pd.to_datetime(t2023_transformed['date'], utc = True)
 
-mean_std_t2022 = pd.read_csv(os.path.join(file_path, "mean_std_train_val_t2022_v2024-12-01.csv"), sep=',')
-mean_std_t2023 = pd.read_csv(os.path.join(file_path, "mean_std_train_val_t2023_v2024-12-01.csv"), sep=',')
+mean_std_t2022 = pd.read_csv(os.path.join(file_path, "mean_std_train_val_summary_t2022_v2024-11-29.csv"), sep=',')
+mean_std_t2023 = pd.read_csv(os.path.join(file_path, "mean_std_train_val_summary_t2023_v2024-11-29.csv"), sep=',')
 
 # set index to first column, renamed 'feature'
 mean_std_t2022 = mean_std_t2022.rename(columns={"Unnamed: 0": "feature"}).set_index("feature")
@@ -165,10 +165,10 @@ t2023_standard = t2023_standard[t2023.columns]
 And now, save these files:
 ```{python}
 # save the file
-fn = os.path.join(file_path, "t2022_standardized_v2024-12-01.csv")
+fn = os.path.join(file_path, "t2022_standardized_summary_v2024-11-29.csv")
 t2022_standard.to_csv(fn, index=False)
 
-fn = os.path.join(file_path, ("t2023_standardized_v2024-12-01.csv"))
+fn = os.path.join(file_path, ("t2023_standardized_summary_v2024-11-29.csv"))
 t2023_standard.to_csv(fn, index = False)
 ```
 
@@ -224,14 +224,14 @@ print_error_metrics("0-5m baseline",
 
 1m baseline
 Mean Squared Error for 1m baseline : 0.23
-Mean Absolute Error for 1m baseline : 0.37
-MAPE for 1m: 2.44 %
+Mean Absolute Error for 1m baseline : 0.38
+MAPE for 1m: 2.46 %
 
 0-5m baseline
 Mean Squared Error for 0-5m baseline : 0.12
-Mean Absolute Error for 0-5m baseline : 0.28
-MAPE for 0-5m: 2.15 %
-1.
+Mean Absolute Error for 0-5m baseline : 0.27
+MAPE for 0-5m: 2.09 %
+
 And for regulation period only:
 
 ```{python}
@@ -249,7 +249,7 @@ print_error_metrics("0-5m baseline during reg period",
 
 1m baseline
 Mean Squared Error for 1m baseline : 0.26
-Mean Absolute Error for 1m baseline : 0.42
+Mean Absolute Error for 1m baseline : 0.41
 MAPE for 1m: 2.45 %
 
 0-5m baseline
@@ -265,11 +265,11 @@ Calculate baseline for test year 2023:
 baseline_t2023_1m = t2023.filter(like="mean_1m_temp_degC")
 baseline_t2023_05m = t2023.filter(like ="mean_0_5m_temp_degC")
 
-print_error_metrics("1m baseline", 
-                    baseline_t2023_1m['mean_1m_temp_degC'], 
+print_error_metrics("1m baseline",
+                    baseline_t2023_1m['mean_1m_temp_degC'],
                     baseline_t2023_1m['mean_1m_temp_degC_m1'])
-print_error_metrics("0-5m baseline", 
-                    baseline_t2023_05m['mean_0_5m_temp_degC'], 
+print_error_metrics("0-5m baseline",
+                    baseline_t2023_05m['mean_0_5m_temp_degC'],
                     baseline_t2023_05m['mean_0_5m_temp_degC_m1'])
 ```
 
@@ -290,11 +290,11 @@ And during regulatory period:
 baseline_t2023_1m_r = t2023_reg.filter(like="mean_1m_temp_degC")
 baseline_t2023_05m_r = t2023_reg.filter(like ="mean_0_5m_temp_degC")
 
-print_error_metrics("1m baseline", 
-                    baseline_t2023_1m_r['mean_1m_temp_degC'], 
+print_error_metrics("1m baseline",
+                    baseline_t2023_1m_r['mean_1m_temp_degC'],
                     baseline_t2023_1m_r['mean_1m_temp_degC_m1'])
-print_error_metrics("0-5m baseline", 
-                    baseline_t2023_05m_r['mean_0_5m_temp_degC'], 
+print_error_metrics("0-5m baseline",
+                    baseline_t2023_05m_r['mean_0_5m_temp_degC'],
                     baseline_t2023_05m_r['mean_0_5m_temp_degC_m1'])
 
 ```
