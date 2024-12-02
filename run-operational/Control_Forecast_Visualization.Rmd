@@ -16,8 +16,9 @@ library(cowplot)
 library(ggthemes)
 
 control_forecast_files <- list.files("run-operational/output/control/", full.names = T)
-dates <- str_extract(control_forecast_files, "\\d{4}-\\d{2}-\\d{2}")
-control_forecasts <- map2(.x = control_forecast_files,
+control_forecast_2023 <- control_forecast_files[grepl('2023', control_forecast_files)]
+dates <- str_extract(control_forecast_2023, "\\d{4}-\\d{2}-\\d{2}")
+control_forecasts <- map2(.x = control_forecast_2023,
                           .y = dates,
                           .f = ~read_csv(.x) %>% 
                             mutate(forecast_date = .y)) %>% 
@@ -89,7 +90,7 @@ forecast_mean <- control_forecasts %>%
   mutate(valid_date = date(valid_date),
          forecast_date = date(forecast_date))
 obs %>% 
-  filter(year(date) == 2022) %>% 
+  filter(year(date) == 2023) %>% 
   ggplot(., aes(x = date, y = mean_1m_temp_degC)) +
   geom_point() +
   geom_line(data = forecast_mean, aes(x = valid_date, y = mean_1m, color = forecast_date)) +
@@ -102,27 +103,30 @@ forecast_min_max <- control_forecasts %>%
   make_forecast_summary() %>% 
   mutate(valid_date = date(valid_date),
          forecast_date = date(forecast_date))
-obs_2022 <- obs %>% 
-  filter(year(date) == 2022)
+obs_2023 <- obs %>% 
+  filter(between(date, ymd('2023-06-01'), ymd('2023-10-01')))
 
 ggplot() +
-  geom_point(data = obs_2022, aes(x = date, y = mean_1m_temp_degC)) +
+  geom_point(data = obs_2023, aes(x = date, y = mean_1m_temp_degC)) +
   geom_ribbon(data = forecast_min_max, aes(x = valid_date, ymin = min_1m_temp, ymax = max_1m_temp, fill = as.factor(forecast_date)), alpha = 0.2) +
   geom_line(data = forecast_mean, aes(x = valid_date, y = mean_1m, color = as.factor(forecast_date))) +
+  labs(y = "water temperature 0-1 meters °C", x = NULL) +
   theme_bw() +
   theme(legend.position = "none")
 
 ggplot() +
-  geom_point(data = obs_2022, aes(x = date, y = mean_0_5m_temp_degC)) +
+  geom_point(data = obs_2023, aes(x = date, y = mean_0_5m_temp_degC)) +
   geom_ribbon(data = forecast_min_max, aes(x = valid_date, ymin = min_0_5m_temp, ymax = max_0_5m_temp, fill = as.factor(forecast_date)), alpha = 0.2) +
   geom_line(data = forecast_mean, aes(x = valid_date, y = mean_int, color = as.factor(forecast_date))) +
+  labs(y = "water temperature 0-5 meters °C", x = NULL) +
   theme_bw() +
   theme(legend.position = "none")
 
 ```
 
 
-## this won't run yet ##
+## Calculate CRPS and visualize
+
 ```{r}
 library(verification)
 
@@ -132,65 +136,26 @@ summary_for_crps <- control_forecasts %>%
             mean_int = mean(mean_0_5m_temp_degC),
             std_int = sd(mean_0_5m_temp_degC),
             .by = c(valid_date, forecast_date)) %>% 
-  left_join(., obs) 
+  mutate(forecast_date = ymd(forecast_date)) %>% 
+  left_join(., obs_2023 %>% rename(forecast_date = date)) 
 
-sum(
-  crps(summary_for_crps$mean_1m_temp_degC[1], c(summary_for_crps$mean_1m[1], summary_for_crps$std_1m[1]))$crps,
-  crps(summary_for_crps$mean_1m_temp_degC[2], c(summary_for_crps$mean_1m[2], summary_for_crps$std_1m[2]))$crps,
-  crps(summary_for_crps$mean_1m_temp_degC[3], c(summary_for_crps$mean_1m[3], summary_for_crps$std_1m[3]))$crps,
-  crps(summary_for_crps$mean_1m_temp_degC[4], c(summary_for_crps$mean_1m[4], summary_for_crps$std_1m[4]))$crps,
-  crps(summary_for_crps$mean_1m_temp_degC[5], c(summary_for_crps$mean_1m[5], summary_for_crps$std_1m[5]))$crps,
-  crps(summary_for_crps$mean_1m_temp_degC[6], c(summary_for_crps$mean_1m[6], summary_for_crps$std_1m[6]))$crps,
-  crps(summary_for_crps$mean_1m_temp_degC[7], c(summary_for_crps$mean_1m[7], summary_for_crps$std_1m[7]))$crps
-)/7
 
-```
+summary_for_crps <- summary_for_crps %>% 
+  rowwise() %>% 
+  mutate(crps_1m = crps(mean_1m_temp_degC, c(mean_1m, std_1m))$crps,
+         crps_05m = crps(mean_0_5m_temp_degC, c(mean_int, std_int))$crps)
 
-```{r}
+ggplot(summary_for_crps) +
+  geom_line(aes(x = valid_date, y = crps_1m, color = as.factor(forecast_date))) +
+  theme_bw() +
+  labs(x = NULL, y = "CRPS 0-1 meter") +
+  theme(legend.position = 'none')
 
-summary_for_crps <- forecast_08202022_7 %>% 
-  summarize(mean_1m = mean(mean_1m_temp_degC),
-            std_1m = sd(mean_1m_temp_degC),
-            mean_int = mean(mean_0_5m_temp_degC),
-            std_int = sd(mean_0_5m_temp_degC),
-            .by = date) %>% 
-  left_join(., obs) 
-
-sum(
-  crps(summary_for_crps$mean_1m_temp_degC[1], c(summary_for_crps$mean_1m[1], summary_for_crps$std_1m[1]))$crps,
-  crps(summary_for_crps$mean_1m_temp_degC[2], c(summary_for_crps$mean_1m[2], summary_for_crps$std_1m[2]))$crps,
-  crps(summary_for_crps$mean_1m_temp_degC[3], c(summary_for_crps$mean_1m[3], summary_for_crps$std_1m[3]))$crps,
-  crps(summary_for_crps$mean_1m_temp_degC[4], c(summary_for_crps$mean_1m[4], summary_for_crps$std_1m[4]))$crps,
-  crps(summary_for_crps$mean_1m_temp_degC[5], c(summary_for_crps$mean_1m[5], summary_for_crps$std_1m[5]))$crps,
-  crps(summary_for_crps$mean_1m_temp_degC[6], c(summary_for_crps$mean_1m[6], summary_for_crps$std_1m[6]))$crps,
-  crps(summary_for_crps$mean_1m_temp_degC[7], c(summary_for_crps$mean_1m[7], summary_for_crps$std_1m[7]))$crps
-)/7
-
+ggplot(summary_for_crps) +
+  geom_line(aes(x = valid_date, y = crps_05m, color = as.factor(forecast_date))) +
+  theme_bw() +
+  labs(x = NULL, y = "CRPS 0-5 meter") +
+  theme(legend.position = 'none')
 
 ```
-
-```{r}
-
-summary_for_crps <- forecast_09112022_7 %>% 
-  summarize(mean_1m = mean(mean_1m_temp_degC),
-            std_1m = sd(mean_1m_temp_degC),
-            mean_int = mean(mean_0_5m_temp_degC),
-            std_int = sd(mean_0_5m_temp_degC),
-            .by = date) %>% 
-  left_join(., obs) 
-
-sum(
-  crps(summary_for_crps$mean_1m_temp_degC[1], c(summary_for_crps$mean_1m[1], summary_for_crps$std_1m[1]))$crps,
-  crps(summary_for_crps$mean_1m_temp_degC[2], c(summary_for_crps$mean_1m[2], summary_for_crps$std_1m[2]))$crps,
-  crps(summary_for_crps$mean_1m_temp_degC[3], c(summary_for_crps$mean_1m[3], summary_for_crps$std_1m[3]))$crps,
-  crps(summary_for_crps$mean_1m_temp_degC[4], c(summary_for_crps$mean_1m[4], summary_for_crps$std_1m[4]))$crps,
-  crps(summary_for_crps$mean_1m_temp_degC[5], c(summary_for_crps$mean_1m[5], summary_for_crps$std_1m[5]))$crps,
-  crps(summary_for_crps$mean_1m_temp_degC[6], c(summary_for_crps$mean_1m[6], summary_for_crps$std_1m[6]))$crps,
-  crps(summary_for_crps$mean_1m_temp_degC[7], c(summary_for_crps$mean_1m[7], summary_for_crps$std_1m[7]))$crps
-)/7
-
-
-```
-
-
 
