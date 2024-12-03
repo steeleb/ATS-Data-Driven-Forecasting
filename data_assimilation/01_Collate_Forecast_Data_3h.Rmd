@@ -1,0 +1,186 @@
+---
+title: "01-Collate Forecast Data"
+author: "ROSSyndicate"
+date: "2024-12-01"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(feather)
+```
+
+# Purpose
+
+This markdown document collates 3h GEFS 0.25 data from our Herbie download for 
+all 3h data.
+
+For our forecasts, we need to read in all the files, collate them, and then 
+just grab the 'right now' and the 6h to compare sw/lw radiation.
+
+```{r}
+if (file.exists("data/herbie_extraction/compiled_forecast/GEFS_0p25_2023_3h_raw.feather")) {
+  forecast_2023 <- read_feather("data/herbie_extraction/compiled_forecast/GEFS_0p25_2023_3h_raw.feather")
+} else {
+  forecast_files <- list.files("data/herbie_extraction/GEFS_2023/", full.names = T)
+  forecast_2023 <- map(forecast_files, read_csv) %>% bind_rows()
+  write_feather(forecast_2023, "data/herbie_extraction/compiled_forecast/GEFS_0p25_2023_3h_raw.feather")
+}
+
+```
+
+Now, to SI:
+- t2m is in deg K, needs to go to C
+- u10,  v10 need to be transformed into wind speed
+
+```{r}
+forecast_2023_si <- forecast_2023 %>% 
+  mutate(temp_degC = (t2m - 273.15),
+         tmin = tmin-273.15,
+         tmax = tmax-273.15,
+         wind_mps = sqrt(u10^2 + v10^2), #sqrt(mer^2 + zon^2)
+         solar_rad_wpm2 = sdswrf,
+         rh = r2) %>%  
+  select(-c(t2m, u10, v10, sdswrf, r2)) 
+
+```
+
+And drop a few more columns that we don't need to track:
+
+```{r}
+forecast_2023_si <- forecast_2023_si %>% 
+  select(-c(heightAboveGround, gribfile_projection, surface)) %>% 
+  # filter out a few stray na rows and a few oopsie 7d timesteps
+  filter(!is.na(time), !grepl('7', step))
+
+```
+
+# Creating a timeseries of the forecast...
+
+Here, we'll make the data 'look' like the met data we use in the workflow, then
+aggregate as we do in the observed met. 
+
+```{r}
+rh_wind <-forecast_2023_si %>% 
+  select(number, date = time, step, wind_mps, rh) %>% 
+  mutate(days = str_sub(step, 1, 1),
+         date = date(date),
+         valid_date = date(date + days(days))) %>% 
+  select(-c(step, days)) %>% 
+  summarize(rh_min = min(rh, na.rm = T),
+            rh_max = max(rh, na.rm = T),
+            rh_ave = mean(rh, na.rm = T),
+            wind_min = min(wind_mps, na.rm = T),
+            wind_max = max(wind_mps, na.rm = T),
+            wind_ave = ave(wind_mps, na.rm = T),
+            .by = c('date', 'valid_date', 'number')) %>% 
+  slice(1, .by = c('date', 'valid_date', 'number'))
+
+air_temp <- forecast_2023_si %>% 
+  select(number, date = time, step, temp_degC) %>% 
+  mutate(days = str_sub(step, 1, 1),
+         date = date(date),
+         valid_date = date(date + days(days))) %>% 
+  select(-c(step, days)) %>% 
+  summarise(air_temp_min_3h = min(temp_degC, na.rm = T),
+            air_temp_mean_3h = mean(temp_degC, na.rm = T),
+            air_temp_max_3h = max(temp_degC, na.rm = T),
+            .by = c('date', 'valid_date', 'number'))
+
+temp_min_max <- forecast_2023_si %>% 
+  select(number, date = time, step, tmax, tmin) %>% 
+  mutate(days = str_sub(step, 1, 1),
+         date = date(date),
+         valid_date = date(date + days(days))) %>% 
+  select(-c(step, days)) %>% 
+  pivot_longer(cols = c('tmax', 'tmin'),
+               names_to = 'parameter',
+               values_to = 'value') %>% 
+  summarise(air_temp_min_day = min(value, na.rm = T),
+            air_temp_max_day = max(value, na.rm = T),
+            .by = c('date', 'valid_date', 'number'))
+
+sol_rad <- forecast_2023_si %>% 
+  select(number, date = time, step, solar_rad_wpm2) %>% 
+  mutate(days = str_sub(step, 1, 1),
+         hour = str_sub(step, 8,9),
+         date = date(date),
+         valid_date = date(date + days(days))) %>% 
+  filter(!hour %in% c('00', '03', '06')) %>% 
+  select(-c(step, days, hour)) %>% 
+  summarise(sol_rad_min_3h = min(solar_rad_wpm2, na.rm = T),
+            sol_rad_max_3h = max(solar_rad_wpm2, na.rm = T),
+            sol_rad_sum_3h = sum(solar_rad_wpm2, na.rm = T),
+            .by = c('date', 'valid_date', 'number'))
+
+timeseries <- reduce(list(air_temp, temp_min_max, sol_rad, rh_wind),
+                     full_join)
+
+write_csv(timeseries, "data/herbie_extraction/compiled_forecast/GEFS_0p25_2023_3h_summary.csv")
+```
+
+# Trasform and standardize
+
+Transform the data:
+
+```{r}
+data_handle <- read_csv("data/NN_train_val_test/SMR_forecast/met_summary/data_handle_tracking_summary_t2023_v2024-11-29.csv")
+params <- timeseries %>% 
+  select(-c(date, valid_date, number)) %>% 
+  names(.)
+data_fore_handle <- data_handle %>% 
+  filter(column %in% params) %>% 
+  select(-`...1`)
+
+forecast_v <- timeseries %>% 
+  pivot_longer(c(air_temp_min_3h:wind_ave),
+               names_to = "column",
+               values_to = "value") %>% 
+  left_join(., data_fore_handle)
+
+forecast_trans <- forecast_v %>% 
+  filter(!is.na(value)) %>% 
+  mutate(value = case_when(is.na(shift) & transform == "square" ~ value**2,
+                           is.na(shift) & transform == "square-root" ~ sqrt(value),
+                           is.na(shift) & transform == "log" ~ log(value),
+                           !is.na(shift) & transform == "square" ~ (value+shift)**2,
+                           !is.na(shift) & transform == "square-root" ~ sqrt(value+shift),
+                           !is.na(shift) & transform == "log" ~ log(value+shift),
+                           .default = value)) %>% 
+  select(-c(shift, transform)) %>% 
+  pivot_wider(names_from = "column",
+              values_from = "value") 
+
+```
+
+Standardize the data using the t2023 mean/std info:
+
+```{r}
+mean_std_t2023 <- read_csv("data/NN_train_val_test/SMR_forecast/met_summary/mean_std_train_val_summary_t2023_v2024-11-29.csv") 
+names(mean_std_t2023) <- c("parameter", "mean", "std")
+
+mean_std_t2023 <- mean_std_t2023 %>% 
+  filter(parameter %in% unique(forecast_v$column))
+
+standardize_cols <- function(data, parameter, mean, std) {
+  param <- data[parameter]
+  data[parameter] <- (param - mean) / std
+  data %>% 
+    select(date, valid_date, number, parameter)
+}
+
+forecast_s <- pmap(list(list(forecast_trans), 
+                        mean_std_t2023$parameter,
+                        mean_std_t2023$mean,
+                        mean_std_t2023$std),
+                   standardize_cols) %>% 
+  reduce(., full_join, by = c("date", "valid_date", "number"))
+
+```
+
+And save the file for forecasting:
+
+```{r}
+write_csv(forecast_s, "data/NN_train_val_test/SMR_forecast/met_summary/t2023_forecast_std_v2024-12-01.csv")
+```
+

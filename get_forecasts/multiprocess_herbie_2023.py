@@ -53,7 +53,7 @@ def get_gefs025_for_date(date, member_list, fxx_list, point):
         return date
 
 def process_all_dates(date_sequence, member_list, fxx_list, point):
-    num_processes = multiprocessing.cpu_count()
+    num_processes = multiprocessing.cpu_count() - 1
     
     with multiprocessing.Pool(processes=num_processes) as pool:
         process_func = partial(get_gefs025_for_date, member_list=member_list, fxx_list=fxx_list, point=point)
@@ -64,7 +64,7 @@ def process_all_dates(date_sequence, member_list, fxx_list, point):
         for date in missing_dates:
             f.write(f"{date}\n")
 
-""" if __name__ == '__main__':
+if __name__ == '__main__':
     DATESEQUENCE = [date.strftime('%Y-%m-%d') for date in pd.date_range("2023-06-01", "2023-10-15")]
     member_list  = ("c00", "p01", "p02", "p03", "p04", "p05", "p06",
                     "p07", "p08", "p09", "p10", "p11", "p12", "p13", 
@@ -73,9 +73,9 @@ def process_all_dates(date_sequence, member_list, fxx_list, point):
                     "`p28", "p29", "p30")
     fxx_list = list(np.arange(0, 169, 3, dtype="object"))
     process_all_dates(DATESEQUENCE, member_list, fxx_list, point)
-"""
 
-if __name__ == '__main__':
+
+""" if __name__ == '__main__':
     # list missing dates
     missing_dates = ("2023-06-19", "2023-06-20", "2023-06-22","2023-07-04", "2023-07-17",
                      "2023-07-25", "2023-07-06", "2023-09-19", "2023-09-21", "2023-09-22", 
@@ -93,3 +93,4 @@ if __name__ == '__main__':
                     "p28", "p29", "p30")
     fxx_list = list(np.arange(0, 169, 3, dtype="object"))
     process_all_dates(DATESEQUENCE, member_list, fxx_list, point)
+"""

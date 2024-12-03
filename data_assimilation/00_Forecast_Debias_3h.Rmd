@@ -1,0 +1,188 @@
+---
+title: "Forecast data integration with observed"
+author: "ROSSyndicate"
+date: "2024-12-01"
+output: html_document
+---
+
+# Purpose
+
+This markdown document is intended to determine how to handle the forecast
+data obtained from NOAA GEFS using Herbie to integrate as part of the data
+assimilation pipeline for operational forecasting of temperature in SMR.
+
+## Load observed data and forecasted data
+
+First, the observed met data - this is loaded from the NASA-NW repository
+workflow.
+
+```{r}
+library(tidyverse)
+library(feather)
+
+w_SMR_today_met <- read_feather("~/Desktop/w_SMR_today_met.feather")
+g_SMR_met_QAQC <- read_feather("~/Desktop/g_SMR_met_QAQC.feather")
+
+```
+
+For our forecasts, we need to read in all the files, collate them, and then 
+just grab the 'right now' and the 6h to compare sw/lw radiation.
+
+```{r}
+all_forecast_files <- list.files("data/herbie_extraction/debias/", full.names = T)
+
+if (file.exists("data/herbie_extraction/compiled_forecast/GEFS_0p25_control_raw_2020-2024.feather")) {
+  control <- read_feather("data/herbie_extraction/compiled_forecast/GEFS_0p25_control_raw_2020-2024.feather")
+} else {
+  control <- map(all_forecast_files, read_csv) %>% bind_rows()
+
+  write_feather(control, "data/herbie_extraction/compiled_forecast/GEFS_0p25_control_raw_2020-2024.feather")
+}
+
+```
+
+We can drop a few columns here that we don't really care about, and grab 00 step 
+for all vars except SR, which we have to grab from the 03 (no 00 data).
+
+```{r}
+forecast_control <- control %>% 
+  filter(number == 0, str_sub(step, 8, 9) == '00') %>% 
+  select(time, t2m, tmin, tmax, u10, v10, r2) %>% 
+  # convert to local time
+  mutate(time = time - hours(7)) %>% 
+  slice(1, .by = time)
+forecast_control_sr <- control %>% 
+  filter(number == 0, str_sub(step, 8, 9) == '03') %>% 
+  select(time = valid_time, sdswrf) %>% 
+  # convert to local time
+  mutate(time = time - hours(7)) %>% 
+  slice(1, .by = time)
+```
+
+Now, to SI:
+- t2m is in deg K, needs to go to C
+- u10,  v10 need to be transformed into wind speed
+
+```{r}
+forecast_control <- forecast_control %>% 
+  mutate(fore_temp_degC = (t2m - 273.15),
+         fore_wind_mps = sqrt(u10^2 + v10^2), #sqrt(mer^2 + zon^2)
+         fore_rh = r2) %>%  
+  select(-c(t2m, u10, v10, r2, tmin, tmax)) 
+forecast_conrol_sr <- forecast_control_sr %>% 
+  rename(fore_sr = sdswrf)
+```
+
+## Look for biases data
+
+```{r}
+prev_3hour <- g_SMR_met_QAQC %>% 
+  mutate(date = date(datetime),
+         hour = hour(datetime),
+         # need to label each 3-hour segment by the hour we want to assign
+         # the summary to at 2, 8, 14, 20
+         hour3 = case_when(between(hour, 0, 1) | hour == 23 ~ 2,
+                           between(hour, 5, 7) ~ 8,
+                           between(hour, 11, 13) ~ 14,
+                           between(hour, 17, 19) ~ 20),
+         # shift 23h to next day for summary
+         date = if_else(hour == 23, date + days(1), date)) %>% 
+  filter(parameter  == "Solar_Radiation_Total", !is.na(hour3)) %>% 
+  pivot_wider(names_from = parameter,
+              values_from = value) %>% 
+  mutate(time = ymd_h(paste(date, hour3, sep = " "))) %>% 
+  summarize(obs_sr = mean(Solar_Radiation_Total),
+            .by = time) 
+# we need 3h intervals of data to match our forecast data
+# instantaneous data: rh, wind, temp
+instantaneous <- g_SMR_met_QAQC %>% 
+  filter(hour(datetime) %in% seq(5, 23, 6)) %>% 
+  filter(parameter %in% c("Air_Temperature_Avg", 
+                          "Wind_Speed_Avg", 
+                          "Relative_Humidity_Avg")) %>% 
+  pivot_wider(names_from = parameter,
+              values_from = value) %>% 
+  rename(obs_air_temp = Air_Temperature_Avg,
+         obs_wind = Wind_Speed_Avg,
+         obs_rh = Relative_Humidity_Avg) %>% 
+  rename(time = datetime)
+  
+```
+
+collate the control forecast with observed 
+
+```{r}
+bias_comp_inst <- left_join(forecast_control, instantaneous)
+bias_comp_sr <- left_join(forecast_conrol_sr, prev_3hour)
+```
+
+
+### Air temp
+
+```{r}
+ggplot(bias_comp_inst, aes(x = obs_air_temp, y = fore_temp_degC)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0)
+
+ggplot(bias_comp_inst, aes(x = obs_air_temp, y = fore_temp_degC)) +
+  geom_point() +
+  facet_grid(hour(time) ~ .)+
+  geom_abline(slope = 1, intercept = 0)
+
+```
+
+These look good, though generally the 17h temp is warmer than the forecast.
+
+### Wind
+
+```{r}
+ggplot(bias_comp_inst, aes(x = obs_wind, y = fore_wind_mps)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0)
+
+ggplot(bias_comp_inst, aes(x = obs_wind, y = fore_wind_mps)) +
+  geom_point() +
+  facet_grid(hour(time) ~ .)+
+  geom_abline(slope = 1, intercept = 0)
+
+```
+
+Meh, not great, not terrible.
+
+### Relative humidity
+
+```{r}
+ggplot(bias_comp_inst, aes(x = obs_rh, y = fore_rh)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0)
+
+ggplot(bias_comp_inst, aes(x = obs_rh, y = fore_rh)) +
+  geom_point() +
+  facet_grid(hour(time) ~ .)+
+  geom_abline(slope = 1, intercept = 0)
+
+```
+
+These look good, other than slightly higher rh in the AM hours.
+
+### Solar radiation
+
+And now we'll look at the control at 3h for solar radiation. This isn't perfect,
+but it gives us an idea of approximate bias
+
+```{r}
+ggplot(bias_comp_sr, aes(x = obs_sr, y = fore_sr)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0)
+
+ggplot(bias_comp_sr, aes(x = obs_sr, y = fore_sr)) +
+  geom_point() +
+  facet_grid(hour(time) ~ .)+
+  geom_abline(slope = 1, intercept = 0)
+
+```
+
+These actually look pretty good too. Hopefully the 8 and 20 hour will offset each 
+other. So these are g2g.
+
+
